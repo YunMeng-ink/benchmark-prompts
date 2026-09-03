@@ -99,7 +99,7 @@ cache.SetKV("catalog_hash", next)          // 整轮结束后才推进
 
 > ⚠️ **关键约束：翻页期间 `since` 必须固定。** 服务端返回的 `since` 是“本次结果对应的
 > 新 hash”；若把它回喂给下一页，服务端会认为客户端已是最新而返回**空集**，
-> 于是只能同步到第一页——一个不报错、但默默丢数据 bug。
+> 于是只能同步到第一页——一个不报错、但默默丢数据的 bug。
 > 回归测试：`TestEndToEndSyncKeepsSinceFixedAcrossPages`（用 107 条跨过一页）。
 
 > 与 `docs/api.md` §4 一致。`Sync` 幂等，可随时重跑；无变化时只花一个请求。

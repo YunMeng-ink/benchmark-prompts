@@ -249,7 +249,7 @@ ctx.tools.register(defineTool({
 |---|---|---|
 | 参数 schema | TypeBox `Type.Object` | schemastery 声明式对象，`required: true` 写在属性里 |
 | `execute` 返回 | `content` + `details`（模型所见即你给的文本） | **只返回 JSON 值**，由 `output.schema` 校验、`output.render` 决定模型看到什么 |
-| 取消 | `execute` 收到 `signal` 入参 | `exec.signal`；文档明确要求"异步工作必须观察或转发 `exec.signal`，并在 abort 后到达静默才 settle" |
+| 取消 | `execute` 收到 `signal` 入参 | `exec.signal`；文档明确要求“异步工作必须观察或转发 `exec.signal`，并在 abort 后到达静默才 settle” |
 
 **第二个差异最容易写错**：从 pi 迁移时如果直接把文本 return 出去，会被
 `output.schema` 校验打回。**先把结果形状定义清楚，再写 execute。**
