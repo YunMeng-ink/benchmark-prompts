@@ -1,4 +1,4 @@
-# 后端实现规格（源站 server）
+# 源站实现规格（`cmd/server` + `internal/api`）
 
 > 实现对象：`cmd/server` + `internal/api` + 依赖模块。契约依据 `docs/api.md`。
 
@@ -47,7 +47,7 @@ recover            → panic 兜底，转 500 不崩进程
    同一批字节会被累加两遍，带宽统计失真。
 2. **`compress` 必须包在 `metrics` 之内**。这样 gzip 后的字节才流入 `metricsWriter`，
    `BytesOut` 统计到的才是真实出站量——这直接决定看门狗判断是否准确。
-   （首版实现漏接了 `compressMW`，由契约测试 `TestContractGzipRoundTrip` 拓出。）
+   （首版实现漏接了 `compressMW`，由契约测试 `TestContractGzipRoundTrip` 抓出。）
 - 写响应统一走 `renderOK / renderErr`，避免散落。ETag 判定在 handler 内做（meta/get），
   命中时直接 `WriteHeader(304)`，不进入压缩。
 
@@ -71,7 +71,7 @@ func Verify(r *http.Request) error {
     if !hmac.Equal([]byte(expected), []byte(sig)) { return ErrUnauthorized }
 }
 ```
-- `secret` 用于 HMAC 签名比对，**必须以可解密形式存储**：`api_keys.secret_enc` 存 AES-GCM 密文（密钥经环境变量注入，见 storage.md §2），校验时解密后计算 expected 签名并比对。不得存 `secret` 的哈希（不可逆则无法验签），也不得明文落盘。
+- `secret` 用于 HMAC 签名比对，**必须以可解密形式存储**：`api_keys.secret_enc` 存 AES-GCM 密文（密钥经环境变量注入，见 `storage.md` §2），校验时解密后计算 expected 签名并比对。不得存 `secret` 的哈希（不可逆则无法验签），也不得明文落盘。
 - body 复读：handler 前用 `io.TeeReader` 缓存。
 
 ## 4. 限流实现（`internal/ratelimit`）
@@ -101,7 +101,7 @@ w.Header().Set("Cache-Control", "max-age=60")
 **gzip**：
 - `Accept-Encoding` 含 `gzip` 时压缩，`Content-Type` 为 `application/json` 或 `text/*`。
 - 优先 `br`（客户端支持时），标准库无 br，初期 gzip 即可。
-- 已在 cache 中缓存的 gzip 字节直接写出，避免重复压缩（见 storage.md §4）。
+- 已在 cache 中缓存的 gzip 字节直接写出，避免重复压缩（见 `storage.md` §4）。
 
 ## 6. 端点处理逻辑（伪代码）
 

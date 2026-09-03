@@ -6,30 +6,9 @@
 
 | 诉求 | 方案 |
 |------|------|
-| 双框架（DSH/Pi）适配成本 | 插件只做「调命令 + 回填」，零业务重复 |
+| 双框架（DSH/Pi）适配成本 | 插件只做“调命令 + 回填”，零业务重复 |
 | 单二进制分发 | Go 交叉编译出 Win/macOS/Linux 单文件，无运行时依赖 |
 | 本地缓存/增量同步 | CLI 内建 SQLite 缓存，无框架也能用 |
-
-## 2. SDK 接口（`pkg/client`）
-
-```go
-type Client struct {
-    BaseURL   string
-    APIKey    string
-    Secret    string          // HMAC 用，可为空（只读匿名）
-    HTTP      *http.Client    // 复用连接、超时
-    Cache     *LocalCache     // 本地 SQLite
-}
-
-// 对应 docs/api.md 端点：
-func (c *Client) Meta(ctx) (*Meta, error)
-func (c *Client) Get(ctx, id string) (*Prompt, error)
-func (c *Client) Random(ctx, tag string, exclude []string) (*Prompt, error)
-func (c *Client) List(ctx, tag string) ([]PromptSummary, error)
-func (c *Client) Sync(ctx) error              // 增量同步到本地缓存
-func (c *Client) Score(ctx, id string, v int) (*ScoreResult, error)
-func (c *Client) Upload(ctx, content string, tags []string) (*UploadResult, error)
-```
 
 ## 2. SDK 接口（`pkg/client`，已实现）
 
@@ -71,7 +50,7 @@ func (c *Client) LocalCount(ctx context.Context) (int, error)
 ```
 
 > **`pkg/client` 的生产代码不 import `internal/`**。它会被插件与第三方脚本直接引用，
-> 一旦把内部类型泄露到导出签名，使用者就被锁死在我们的内部实现上。
+> 一旦把内部类型泄露到导出签名，使用者就被锁死在本项目的内部实现上。
 > 唯一例外是测试文件（签名一致性测试必须两边对比，见 §12）。
 
 **核心行为：**
@@ -118,8 +97,8 @@ for {
 cache.SetKV("catalog_hash", next)          // 整轮结束后才推进
 ```
 
-> ⚠️ **关键约束：翻页期间 `since` 必须固定。** 服务端返回的 `since` 是"本次结果对应的
-> 新 hash"；若把它回喂给下一页，服务端会认为客户端已是最新而返回**空集**，
+> ⚠️ **关键约束：翻页期间 `since` 必须固定。** 服务端返回的 `since` 是“本次结果对应的
+> 新 hash”；若把它回喂给下一页，服务端会认为客户端已是最新而返回**空集**，
 > 于是只能同步到第一页——一个不报错、但默默丢数据 bug。
 > 回归测试：`TestEndToEndSyncKeepsSinceFixedAcrossPages`（用 107 条跨过一页）。
 

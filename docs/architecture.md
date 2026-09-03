@@ -131,16 +131,16 @@ var (
 
 若切换 Node/TS，以下不变：API 契约、数据模型、目录 hash 算法、增量同步协议、CDN 方案。需要替换的仅是实现层：`net/http → Fastify`、`modernc.org/sqlite → node:sqlite`、`自实现 flag → commander`、`crypto/hmac → crypto`。建议评估完团队工具链后**一次性决策，不再反复**。
 
-> 实现进度备注：后端已按 **Go 主线** 完成并通过全部测试（含 45 项端到端冒烟），未发生切换。
+> 实现进度备注：源站已按 **Go 主线** 完成并通过全部测试（含 45 项端到端冒烟），未发生切换。
 
 ## 8. 关键技术决策记录（ADR 简表）
 
 | 编号 | 决策 | 理由 |
 |------|------|------|
-| ADR-1 | 后端 Go + SQLite 单机单进程 | 2H2G 资源余量大，避免多进程/多服务运维 |
+| ADR-1 | 源站 Go + SQLite 单机单进程 | 2H2G 资源余量大，避免多进程/多服务运维 |
 | ADR-2 | 纯 Go SQLite 驱动（无 CGO） | 交叉编译零成本（供多平台 CLI） |
 | ADR-3 | 前端零回源 · 纯静态 | 2M 带宽硬约束，前端必须脱离源站 |
-| ADR-4 | 增量同步用「目录 hash + delta 变更集」 | 避免全量拉取，最小化重复流量 |
+| ADR-4 | 增量同步用“目录 hash + delta 变更集” | 避免全量拉取，最小化重复流量 |
 | ADR-5 | 列表返回 PromptSummary（无正文） | 正文只在 get/random/delta 返回，省带宽 |
 | ADR-6 | 能力下沉 CLI，插件只做薄胶水 | 解 DSH/Pi 双框架适配 |
 | ADR-7 | 包名 `internal/sync` → **`internal/catalog`** | 与标准库 `sync` 包名冲突，import 后无法再用 `sync.Mutex` |
@@ -149,4 +149,4 @@ var (
 | ADR-10 | 正文只 `TrimSpace`，**不折叠内部空白** | benchmark 提示词常为多行，折叠会破坏内容；空白归一仅用于算 hash |
 | ADR-11 | CLI 用 stdlib `flag` + 内置分发器，不用 cobra | 继续压依赖；子命令逻辑全在 `internal/cli` 以保证可测 |
 | ADR-12 | SDK 重试**只限幂等只读请求** | 服务端变慢时重试写请求会把延迟成倍放大，比偶发失败更糟 |
-| ADR-13 | `pkg/client` 生产代码不 import `internal/` | 公开 SDK 一旦泄露内部类型，使用者就被锁死在我们的实现上 |
+| ADR-13 | `pkg/client` 生产代码不 import `internal/` | 公开 SDK 一旦泄露内部类型，使用者就被锁死在本项目的实现上 |

@@ -121,7 +121,7 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 2. **只开 443**：防火墙仅放行 443；`/ -/metrics` 仅内网/管理 Key。
 3. **密钥管理**：API key 存 `sha256`；HMMS `secret` 加密存储；生产用环境变量注入。
 4. **TLS**：强制 HTTPS，HSTS 头。
-5. **限流**：见 server.md §4 + 分级配额（api.md §6）。
+5. **限流**：见 `server.md` §4 + 分级配额（`api.md` §6）。
 6. **输入消毒**：正文、标签、ID 全量校验，防 SQL 注入（用参数化查询）、防 XSS（前端转义）。
 7. **依赖审计**：`govulncheck` 定期扫。
 
@@ -138,7 +138,7 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 
 - [ ] 部署前先 `make release && make release-verify`，**产物未经验证不上传**
 - [ ] 部署后跑 `bench-server -version`，确认版本号与构建时间与本次发布一致
-      （而不是靠“我刚刚传的文件应该是新的”这种记忆）
+      （而不是靠“刚传的文件应该是新的”这一印象）
 - [ ] 前端静态资源已上 CDN 且源站不服务 web/*
 - [ ] gzip 生效（curl -H 'Accept-Encoding: gzip' -I 验证 Content-Encoding）
 - [ ] meta/get 返回 ETag，且 If-None-Match → 304

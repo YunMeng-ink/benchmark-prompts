@@ -6,10 +6,10 @@
 
 | 文档 | 内容 |
 |------|------|
-| [api.md](./api.md) | REST API 契约（已冻结，前后端并行开发依据） |
+| [api.md](./api.md) | REST API 契约（已冻结，各方并行开发依据） |
 | [architecture.md](./architecture.md) | 系统架构、分层、依赖方向、配置、日志、错误模型 |
 | [storage.md](./storage.md) | 数据模型、DDL、迁移、缓存、去重、审核状态机 |
-| [server.md](./server.md) | 后端（源站）实现规格 |
+| [server.md](./server.md) | 源站实现规格 |
 | [client.md](./client.md) | SDK 与 CLI 实现规格 |
 | [plugins.md](./plugins.md) | DSH / Pi 插件适配规格（两框架能力对齐表、统一回填模板、边界情况） |
 | [handover-dsh.md](./handover-dsh.md) | **DSH 框架研究底稿**：插件 API 形状 + 本机源码行号，
@@ -28,8 +28,7 @@
 
 ## 0. 谁是事实来源（权威层级）
 
-同一事实写在多处就必然漂移（本项目已发生过：技术栈表里的 `cobra` 与 ADR-11 矛盾、
-`plugins.md` 里臆造的 `tools:` YAML 与实际插件 API 矛盾）。因此约定：
+约定：
 
 | 主题 | 唯一权威 | 其余文档的角色 |
 |---|---|---|
@@ -46,7 +45,44 @@
 两条维护规则：
 
 1. **文档与代码冲突时，以代码为准并当场回写**。“只是口头承认差异”不算修完。
-2. **不要在引用位拄数字**。改一个测试数量要扫 6 个文件是上一轮整理的真实成本。
+2. **不要在引用位抄数字**。
+
+---
+
+## 0.5 用语与写作约定
+
+> 本节是文档校对与新增内容的唯一依据。括号里的原名是代码/API 中的字面量，保留不改。
+
+### 术语（一个概念只用一个词）
+
+> 领域名词的**定义**见 §7；本节只管**用词统一**。
+
+| 统一用词 | 不再使用 | 边界 |
+|---|---|---|
+| 源站 | 后端、服务端（指部署形态时） | 指 HK 上的 `bench-server` 进程与其数据；讲代码分层时才写“后端代码” |
+| 插件 | 扩展（指适配物时） | Pi 的具体机制仍叫 extension，路径/命令保留原名 `plugins/pi/extension/` |
+| Pi | 正文里的小写 pi | 小写 `pi` 只用于可执行文件名、路径、包名、代码；中文行文统一 Pi |
+| DSH | 重复展开 DeepSeek Harness | 仅首次出现处展开一次，此后一律 DSH |
+| 打分 / 评分 | 计分、评价 | 动作用“打分”，结果（`avg`/`count`）用“评分” |
+| 端点 | 接口（指 HTTP endpoint 时） | “接口”只留给 Go interface 与抽象边界 |
+| 门禁 | 门禁、门禁 | 命令入口一律写 `make check` |
+| 产物 | 制品、构建物 | 指 `dist/` 下的文件；发布产物 = 二进制 + 归档 + 校验值 |
+| 本地缓存 | 客户端缓存 | 指 `bench` 的 SQLite；服务端那份只叫“缓存”（LRU） |
+| 抓出 | 抓出、抓出、暴露 | 固定句式：“被测试抓出的缺陷” |
+| 阈值 | 门限 | |
+| 版本注入 | 写入版本、埋版本 | 统一“版本注入 / `-X` 注入” |
+
+### 写法
+
+1. **交叉引用**：同目录 `23`；跳目录 `24`。
+   行文里提到文件用反引号 `docs/api.md`，**不混用裸文件名**。
+2. **引号**：中文语境用 “ ”；代码、命令、路径、字段名一律反引号。
+3. **命令引用**：写 `make smoke-dsh`，不写 `bash scripts/smoke-dsh.sh`——除非语境就要求“能直接执行”。
+4. **状态符号只用三个**：✅ 已完成 / ⬜ 未做 / 🔶 部分完成。`⚠️` 只用于警示块，
+   `★` 只用于文件清单里标“先读这个”。
+5. **不写第一人称叙事**：错误原因以“事实 + 后果”陈述，保留教训、去掉自述。
+   例：“曾被误判为端口争用，实为句柄泄漏”，而不是“我曾猜错”。
+6. **小节引用一律用编号**（“见 §12”），不用“上一节/上面那个表”这类相对位置词。
 
 ---
 
@@ -54,21 +90,21 @@
 
 | 层 | 选型 | 版本约束 |
 |----|------|----------|
-| 后端 | Go | **1.22+**（实现用增强 `net/http.ServeMux`：方法+路径模式） |
-| HTTP 路由 | 标准库 `net/http` | **不引入 chi**，见 architecture.md ADR-8 |
+| 源站 | Go | **1.22+**（实现用增强 `net/http.ServeMux`：方法+路径模式） |
+| HTTP 路由 | 标准库 `net/http` | **不引入 chi**，见 `architecture.md` ADR-8 |
 | 数据库 | SQLite（`modernc.org/sqlite`） | 纯 Go，无 CGO，跨平台 |
 | 缓存 | 进程内 LRU + TTL（`internal/cache` 自实现） | 不引入 golang-lru，ADR-9 |
-| CLI | 标准库 `flag` + 内置子命令分发器 | **不引入 cobra**，见 architecture.md ADR-11；直接依赖共 2 个 |
+| CLI | 标准库 `flag` + 内置子命令分发器 | **不引入 cobra**，见 `architecture.md` ADR-11；直接依赖共 2 个 |
 | 配置 | YAML（`gopkg.in/yaml.v3`） | |
 | 签名 | 标准库 `crypto/hmac` + `crypto/sha256` | |
-| 前端 | 静态 HTML + 原生 JS（无框架）或轻量构建 | 见 frontend.md |
+| 前端 | 静态 HTML + 原生 JS（无框架）或轻量构建 | 见 `frontend.md` |
 | 测试 | 标准库 `testing` + `httptest` | |
 
-> **备选方案**：若团队无 Go 工具链，可整体切换 **Node/TypeScript**（Fastify + better-sqlite3 + pnpm），接口契约不变。切换成本点见 architecture.md §7。当前以 **Go 为唯一主线**。
+> **备选方案**：若团队无 Go 工具链，可整体切换 **Node/TypeScript**（Fastify + better-sqlite3 + pnpm），接口契约不变。切换成本点见 `architecture.md` §7。当前以 **Go 为唯一主线**。
 
 ### 2.1 实际工具链情况（已真实验证）
 
-后端骨架已在下述环境**编译、vet、`-race` 测试、45 项端到端冒烟全部跑通**：
+源站已在下述环境**编译、vet、`-race` 测试、45 项端到端冒烟全部跑通**：
 
 | 项 | 实际情况 |
 |----|----------|
@@ -103,21 +139,9 @@ go env GOPATH
 | go vet | 静态检查 | `go vet ./...` |
 | staticcheck | 深度静态检查 | `staticcheck ./...`（**已纳入 `make check`**，当前零发现） |
 | go test | 测试 | `go test ./...` |
-| golangci-lint | 汇总 lint（可选 CI 用） | ❌ **本机不可用**（已核实），未纳入门禁 |
 | biome | TS 插件与前端 JS/JSON/MD 的 lint + 格式化 | `biome check plugins/pi/extension/ plugins/dsh/`（M4 起的实际用法；配置见 `benchmark-prompts/biome.json`） |
 
-> 本机实际可用工具已逐个 `--version` 核对：`go`（在 `D:\Scoop\apps\go\current\bin`，
-> 不在默认 PATH）、`node` v26.8.1（能原生跑 TS，插件单测靠它）、`biome` 2.5.11、
-> `shellcheck`、`staticcheck` 2026.2.1。`tsc` **不在 PATH**，
-> 由 `scripts/dsh-typecheck.sh` 从 DSH 安装树里解析调用。
-
-> 遵循 `AGENTS.md`：不假设清单外工具存在；首次使用先 `--version`。
-
 ## 3. 完整目录结构（约定）
-
-> **落地状态（M4 末）**：`cmd/`、`internal/`、`pkg/client/`、`plugins/pi/`、`plugins/dsh/`、
-> `scripts/`、`internal/store/migrations/` 已全部存在并有测试覆盖；
-> `web/`（M5）与 `deploy/`（M6）**尚未创建** —— 本树是约定，不是现状清单。
 
 ```
 benchmark-prompts/
@@ -152,11 +176,11 @@ benchmark-prompts/
 
 ## 4. 代码规范
 
-- **命名**：包名小写单词；导出标识符遵循 Go 惯例（`HTTP`、`ID`）；结构体字段见 storage.md 的 DDL 对应。
+- **命名**：包名小写单词；导出标识符遵循 Go 惯例（`HTTP`、`ID`）；结构体字段见 `storage.md` 的 DDL 对应。
 - **格式化**：一律 `gofmt`，禁止手工排版。
 - **错误处理**：统一 `fmt.Errorf("xxx: %w", err)` 包装，不吞错、不 `panic`（仅 `main` 装配阶段允许）。
 - **上下文**：HTTP handler 全程透传 `context.Context`，超时用 `context.WithTimeout`。
-- **日志**：`log/slog` 结构化，见 architecture.md §5。
+- **日志**：`log/slog` 结构化，见 `architecture.md` §5。
 - **注释**：导出项必须有 godoc 注释。
 - **依赖方向**：`internal/api → store/cache/sync/...`；**禁止反向依赖**；`pkg/client` 独立可发布，不得依赖 `internal`。
 
@@ -165,33 +189,35 @@ benchmark-prompts/
 - **分支**：`main`（可发布）+ `feat/*` + `fix/*` + `docs/*`。
 - **提交**：Conventional Commits：
   - `feat:` 新功能、`fix:` 修复、`docs:` 文档、`refactor:` 重构、`test:` 测试、`chore:` 杂项。
-- **PR 要求**：通过 `go vet` + `go test`；后端接口变更必须同步更新 `docs/api.md` 并标注兼容性。
-- **契约变更流程**：任何 API 改动先在 `docs/api.md` 走「只增不改不删」评审，再实现。
+- **PR 要求**：通过 `go vet` + `go test`；源站端点变更必须同步更新 `docs/api.md` 并标注兼容性。
+- **契约变更流程**：任何 API 改动先在 `docs/api.md` 走“只增不改不删”评审，再实现。
 
-## 6. 质量门禁（合并前必须通过）
+## 6. 门禁（合并前必须通过）
 
 > **命令清单的唯一权威是 [testing.md](./testing.md) §8**（及其 §10 实测结果）。
-> 本节不再拄命令与项数 —— 上一轮整理就是因为同一个数字抄在 6 个文件里而全而失真。
+> 本节不再抄命令与项数 —— 上一轮整理就是因为同一个数字抄在 6 个文件里而全而失真。
 
 不成文的约束（只有这里说）：
 
 1. 用 `make check` 一个入口，不要手工挑着跑；它**串通了 Go 与 TS 两侧**。
 2. 缺 node / biome / staticcheck 时目标会**打印 SKIP 并继续** ——
    要求“必须跑全”时得自己断言工具存在，**SKIP 不等于通过**。
-3. 新端点/新字段**必须**有对应契约测试（见 testing.md §4）。
+3. 新端点/新字段**必须**有对应契约测试（见 `testing.md` §4）。
 4. 改了 `bench-core.ts` 任何一份副本，**必须双向同步**并更新两处 sha256 钉，
    否则 `make test-ts` 直接红。
 5. 代码与文档矛盾时以代码为准，**并当场回写文档**（见本文件 §0）。
 
 ---
 
-## 7. 关键术语对齐
+## 7. 领域名词定义
+
+> 本表只定义“是什么”；“该用哪个词”见 §0.5。
 
 | 术语 | 定义 |
 |------|------|
-| 源站 | 部署 API 的后端服务器（2H2G） |
+| 源站 | 部署 API 的服务器（香港，2H2G） |
 | 目录 hash | 全体 approved 提示词的确定性摘要，用于 `delta` 增量同步 |
 | 增量同步 | 客户端基于 `since=hash` 只拉差异，不拉全量 |
 | PromptSummary | 不含正文的列表条目（省带宽） |
-| deviceId / clientId | 分别用于评分去重 / 上传幂等的客户端指纹 |
+| deviceId / clientId | 分别用于打分去重 / 上传幂等的客户端指纹 |
 | CDN | 托管前端静态资源的亚太 CDN，源站零前端回源 |

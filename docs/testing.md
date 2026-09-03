@@ -51,7 +51,7 @@ func TestContractRandom(t *testing.T) {
 - `delta` 的全量/增量/`has_more` 翻页语义。
 - `meta`/`get` 的 `If-None-Match → 304`。
 
-> **规则**：任何 api.md 变更，先写（或改）对应契约测试，再改实现（TDD）。
+> **规则**：任何 `api.md` 变更，先写（或改）对应契约测试，再改实现（TDD）。
 
 ## 5. 端到端（CLI 视角）
 
@@ -67,7 +67,7 @@ func TestContractRandom(t *testing.T) {
 
 ## 6. 插件验收
 
-见 plugins.md §7 —— 核心是「一句自然语言能触发一键/随机测试，且结果进入框架上下文」。
+见 `plugins.md` §7 —— 核心是“一句自然语言能触发一键/随机测试，且结果进入框架上下文”。
 
 ## 7. 前端手工验收
 
@@ -104,7 +104,9 @@ make smoke            # 45 项，服务端真实 HTTP + 真实 SQLite
 make smoke-cli        # 35 项，真实 bench 二进制
 make typecheck-dsh     # tsc noEmit 对 DSH 真实 .d.ts
 make release           # 全平台交叉编译 + 打包 + sha256sums + RELEASE-INFO
-make release-verify    # 验证发布产物（不跑它就不要声称“产物已验证”）
+make release-verify    # 验证发布产物
+
+产物矩阵、发布流程与用户侧校验见 `deployment.md` §1（唯一权威，此处不重复）。
 make smoke-pi         # 12 项，真实 pi + 真实 LLM（无凭据则 SKIP）
 make smoke-dsh        # 19 项，真 DSH headless + 真 LLM（无安装树则 SKIP）
 make contract         # 重新采集 bench --json 地面数据
@@ -116,7 +118,7 @@ make contract         # 重新采集 bench --json 地面数据
 
 ## 9. 验收标准（MVP 就绪定义）
 
-- [x] 7 个端点全部按 api.md 契约通过
+- [x] 7 个端点全部按 `api.md` 契约通过
 - [x] gzip + ETag/304 + delta 增量生效
 - [x] 限流 + 带宽看门狗生效
 - [x] 备份 + 审核运维链路就绪
@@ -135,8 +137,8 @@ make contract         # 重新采集 bench --json 地面数据
 | Go 格式 | `gofmt -l .` | ✅ 无输出 |
 | Go 单测+契约 | `go test -race -count=1 ./...` | ✅ **14/14 包通过**，无 DATA RACE |
 | 聚合覆盖率 | `go test -coverpkg=./...` | **78.3%**（cache/model/ratelimit 100%，auth 91.5%，catalog 87%，internal/cli 84.8%） |
-| TS lint/格式 | `biome check plugins/pi/extension/ plugins/dsh/` | ✅ **7 个文件** 0 error 0 warning（120 列 + tab，对齐 pi 官方示例风格） |
-| TS 单测 | `make test-ts`（node --test） | ✅ **63 项**：pi 侧 33（含 3 项真实 bench 集成、2 项 skill 结构校验）+ dsh bench-core 7（含哈希钉）+ **dsh 插件层 23**（假 ctx + 真 `defineTool`） |
+| TS lint/格式 | `biome check plugins/pi/extension/ plugins/dsh/` | ✅ **7 个文件** 0 error 0 warning（120 列 + tab，对齐 Pi 官方示例风格） |
+| TS 单测 | `make test-ts`（node --test） | ✅ **63 项**：Pi 侧 33（含 3 项真实 bench 集成、2 项 skill 结构校验）+ dsh bench-core 7（含哈希钉）+ **dsh 插件层 23**（假 ctx + 真 `defineTool`） |
 | DSH 类型检查 | `make typecheck-dsh` | ✅ `tsc noEmit` 对着 DSH 真实 `.d.ts`（DSH 包附 `src/`，可类型检查 —— pi 入口做不到） |
 | 服务端端到端 | `bash scripts/smoke.sh` | ✅ **45/45** |
 | CLI 二进制端到端 | `bash scripts/smoke-cli.sh` | ✅ **35/35** |
@@ -153,28 +155,28 @@ make contract         # 重新采集 bench --json 地面数据
 - **smoke-cli.sh**：编译出真实 `bench` 二进制，以**插件将要使用的同一方式**
   （shell 调用 + `--json` + 退出码）跑全流程，含源站下线后的 `--local` 离线路径。
 - **smoke-pi.sh**：先跑**对照实验**（故意加载坏扩展，确认 pi 会报
-  `Failed to load extension`，否则“没报错”不构成证据），再加载我们的扩展，
+  `Failed to load extension`，否则“没报错”不构成证据），再加载本项目扩展，
   最后让真实 LLM 调用 `bench_random` / `bench_catalog`，断言取回的是源站上那条
   带唯一标记的提示词（而不是模型编造的文本）。pi 或模型凭据缺失时自动 SKIP。
   用 `--tools` 白名单堵死“模型自己跑 bench”的旁路（该白名单作用于内置+扩展工具）。
 - **smoke-dsh.sh**：同构且更严 —— A 前置 → B 单元/tsc → C 对照实验（DSH 必须报
   `failed to import/apply loader entry`）→ D 真 LLM 调用 → E 四类失败分支 → F skill 发现。
   测试 patch 把 `tool-pwsh`/`tool-fs`/`tool-web` 等一切旁路 `disabled: true`
-  ——**第一轮实测就靠这条拓到了“模型自己跑 CLI 取数据”的假通过**。
+  ——**第一轮实测就靠这条抓到了“模型自己跑 CLI 取数据”的假通过**。
 
-### 被测试拓出的真实缺陷（按严重度）
+### 被测试抓出的真实缺陷（按严重度）
 
 1. **`compressMW` 未接入中间件链** —— gzip 从未生效。2M 带宽方案的第一要件，
-   仅靠写文档发现不了，由 `TestContractGzipRoundTrip` 拓出。
+   仅靠写文档发现不了，由 `TestContractGzipRoundTrip` 抓出。
 2. **同步伪代码自带丢数据 bug**（`docs/client.md` §4 原稿）—— `hash = d.since`
-   写在翻页循环内，第二页会把新 hash 回喂服务端 → 服务端判定"已最新"返回空集 →
+   写在翻页循环内，第二页会把新 hash 回喂服务端 → 服务端判定“已最新”返回空集 →
    只同步到第一页。不报错不崩溃，只是默默丢数据。回归测试
    `TestEndToEndSyncKeepsSinceFixedAcrossPages`（107 条跨页）。
-3. **`--fresh` 语义错误** —— 原实现排除"全部本地缓存 id"，而 `bench sync` 会把
-   整个目录灌进缓存，等于永远 404。改为排除"最近抽过"的滚动窗口（上限 50）。
-   由真实 pi 调用拓出。
+3. **`--fresh` 语义错误** —— 原实现排除“全部本地缓存 id”，而 `bench sync` 会把
+   整个目录灌进缓存，等于永远 404。改为排除“最近抽过”的滚动窗口（上限 50）。
+   由真实 Pi 调用抓出。
 4. **探测命令写成 `bench --json`** —— bench 把第一个位置当子命令名，`--json` 被
-   当未知命令退 5，导致正常二进制被误判为"版本过旧"。应为 `bench version --json`。
+   当未知命令退 5，导致正常二进制被误判为“版本过旧”。应为 `bench version --json`。
 5. **`flag` 包静默丢弃位置参数之后的选项** —— `bench config init --home X` 里
    `--home` 被悄悄忽略且不报错。已加 `splitArgs` 分拢。
 6. **`CreatePendingPrompt` 未做 trim** —— 裁剪只在 handler，任何新写入方都会绕过。
@@ -182,15 +184,15 @@ make contract         # 重新采集 bench --json 地面数据
 7. **`os.WriteFile` 的 perm 仅创建时生效** —— 含凭据的配置若已存在不会被收紧权限。
    已补显式 `Chmod`。
 8. **`PruneSnapshots` 声明了 `cutoff` 却漏传 SQL 参数** —— 运行必崩，编译器抓出。
-9. **测试自身的假阳性**（值得单列）—— `TestSDKSignatureAcceptedByServerVerifier`
+9. **测试自身的假阳性** —— `TestSDKSignatureAcceptedByServerVerifier`
    首版用被篡改的 body **重新签名**，那是个自洽的合法签名，服务端接受完全正确，
    测试会以“防篡改已验证”的假象通过。改为“沿用旧签名 + 偷换 payload”后才是真实攻击场景。
 10. **LLM 探针词被拒绝语引用 → 断言顺序缺陷** —— `smoke-dsh.sh` 先用
     `grep TOOL-OK` 判失败、再查错误标记。模型完全正确地拒绝了（“因此不能回答 TOOL-OK”），
     却因引用了探针词而被判为“把错误当成成功”。**插件无错，测试错了**。
     改为**先查错误标记、再查探针词**（仍保留诊断力：真发生了“错误被吞”，
-    模型手里就没有错误文本可引）。同类断言已同步补进 pi 侧。
-11. **CLI 不关 SQLite 缓存句柄**（发布阶段才抖出）—— 只在 Windows 上表现为
+    模型手里就没有错误文本可引）。同类断言已同步补进 Pi 侧。
+11. **CLI 不关 SQLite 缓存句柄**（发布阶段才抓出）—— 只在 Windows 上表现为
     `t.TempDir` 清理失败，Linux/macOS 完全看不出来。已给 7 个 `clientFor`
     调用点补 `defer c.Close()`。
 12. **`go version -m` 读不到 `-ldflags`** —— 原计划用 build info 验证跨平台产物的
@@ -199,7 +201,7 @@ make contract         # 重新采集 bench --json 地面数据
 13. **`pipefail` + `grep -q` 的 SIGPIPE 陷阱** —— `tar -tzf | grep -q` 里 grep 提前关
     管道会让 tar 收到 EPIPE，整条管线返回 141，**归档内容完全正确也会被判失败**。
     同类判断改成“先取进变量再模式匹配”。
-——DSH 侧第一轮实测就拓到了这条路。修正：测试环境必须消除旁路
+——DSH 侧第一轮实测就抓到了这条路。修正：测试环境必须消除旁路
 （DSH：patch 里 `disabled: true`；pi：`--tools` 白名单）。
 
 ### 已知限制（不阻塞）
@@ -222,4 +224,4 @@ make contract         # 重新采集 bench --json 地面数据
   删除仍被句柄占用的文件，于是清理失败；失败包会在 `internal/cli` 与 `pkg/client`
   之间飘，单独跑又总过 —— 典型的资源泄漏伪装成“随机不稳”。
   已修：`clientFor` 的 7 个调用点均 `defer c.Close()`，连跑 3 轮全量 `-race` 稳定 14/14。
-  教训：**“复现不了就先记一笔偶然”会把真 bug 合理化为噪声**，下次要带工具多跑几轮。
+  **结论：“复现不了就先记一笔偶然”会把真 bug 合理化为噪声** —— 偶发失败必须多轮复跑定位，不能归因于环境。

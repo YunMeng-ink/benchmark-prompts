@@ -153,7 +153,7 @@ SELECT id FROM prompts WHERE updated_at > ? AND (deleted=1 OR status='rejected')
 ## 9. 备份
 
 - 每日 `VACUUM INTO '/backup/bench-YYYYMMDD.db'`（WAL 下安全），轮转 7 份。
-- 见 deployment.md §3。
+- 见 `deployment.md` §3。
 
 ## 10. 容量估算
 

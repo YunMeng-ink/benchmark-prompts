@@ -37,7 +37,7 @@
 go env -w GOPROXY=https://goproxy.cn,direct
 go mod tidy
 
-# 2. 质量门禁（fmt + vet + build + race 测试）
+# 2. 门禁（fmt + vet + build + race 测试）
 make check
 
 # 3. 端到端冒烟（真实编译 + 真实 HTTP + 真实 SQLite）
@@ -113,10 +113,10 @@ bench-server -config c.yaml -backup  /backup/bench.db      # 一致性备份
    看门狗判断才准确。
 4. **正文只 `TrimSpace`，不折叠内部空白**：benchmark 提示词常为多行，折叠会破坏内容；
    空白归一**仅用于计算 content_hash**（从而让排版不同的重复提交可被去重）。
-5. **`updated_at >= since`**：同一秒内"登记快照"与"内容变更"可能同戳，用 `>` 会漏发；
+5. **`updated_at >= since`**：同一秒内“登记快照”与“内容变更”可能同戳，用 `>` 会漏发；
    客户端 upsert/delete 幂等，宁可多返回。
 6. **`deleted` 判定取 `NOT(approved|featured)`**：会把 pending 也列出（客户端本就不该
-   持有，无害），换取"已公开条目被回退"这种严重场景不漏删。
+   持有，无害），换取“已公开条目被回退”这种严重场景不漏删。
 7. **主密钥只来自环境变量**，`api_keys` 里 key 存 sha256、secret 存 AES-GCM 密文
    （不能存哈希，否则无法验签——这是复核阶段抓到的缺陷）。
 

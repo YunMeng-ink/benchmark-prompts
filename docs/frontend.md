@@ -62,7 +62,7 @@ async function api(path, opts) {
 }
 ```
 
-## 7. 质量门禁
+## 7. 门禁
 
 - `pnpm biome check web/`（若引入 JS/JSON 文件）。
 - 手工验收：断网仅靠 CDN 缓存能打开首屏骨架；API 域与前端域分离（CORS 配置见下）。

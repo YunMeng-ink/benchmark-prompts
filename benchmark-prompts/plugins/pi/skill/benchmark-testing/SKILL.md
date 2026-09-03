@@ -74,7 +74,7 @@ bench_score(id="刚那条的 id", value=1-5)
 | `鉴权失败` | 写操作缺 API Key | 提示用户 `bench config init --key ...`；只读不受影响 |
 | `被限流，稍后重试` | 触发配额 | 等几十秒再试，别循环重试 |
 | `网络或服务端故障` | 源站不可达 | 用 `bench_get(local=true)` 走离线缓存 |
-| `bench_missing` | 没装 CLI | 见上面「前提」 |
+| `bench_missing` | 没装 CLI | 见上面“前提” |
 
 ## 用户可直接用的斜杠命令
 

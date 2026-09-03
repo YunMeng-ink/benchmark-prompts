@@ -9,7 +9,7 @@
   2M 带宽是硬约束，所以前端全量走 CDN、API 只做 gzip + ETag/304 + 增量同步。
 - **技术栈**：Go + SQLite（仅 2 个直接依赖），纯 Go 驱动无需 CGO，交叉编译即得全平台单文件。
 - **多框架适配的解法**：能力全部下沉到 `bench` CLI，插件里**零业务逻辑**，
-  只负责"调命令 + 展示结果"。这是唯一能跨语言（Go ↔ TS）复用的边界。
+  只负责“调命令 + 展示结果”。这是唯一能跨语言（Go ↔ TS）复用的边界。
 
 ## 快速上手
 
@@ -38,7 +38,7 @@ grep bench-v0.1.0-linux-amd64 sha256sums.txt | sha256sum -c -
 | [pi](https://github.com/badlogic/pi) | [`benchmark-prompts/plugins/pi/`](./benchmark-prompts/plugins/pi/) | 5 工具 + 6 斜杠命令 + skill |
 | DSH（DeepSeek Harness） | [`benchmark-prompts/plugins/dsh/`](./benchmark-prompts/plugins/dsh/) | 同上（Cordis 插件） |
 
-两个框架**共用同一份 `SKILL.md`**，装好插件即可用一句话触发「一键/随机测试」。
+两个框架**共用同一份 `SKILL.md`**，装好插件即可用一句话触发“一键/随机测试”。
 
 ## 仓库结构
 
@@ -77,7 +77,7 @@ make release-verify    # 验证产物（字节级版本注入证据 + 校验值 
 
 ## 状态
 
-M1 文档、M2 后端、M3 SDK/CLI、M4 双框架适配、发布工程均已完成；
+M1 文档、M2 源站、M3 SDK/CLI、M4 双框架适配、发布工程均已完成；
 前端上 CDN（M5）与部署监控（M6）待做。逐项记录见
 [CHANGELOG](./benchmark-prompts/CHANGELOG.md) 与
 [docs/testing.md](./docs/testing.md) 的验收清单。

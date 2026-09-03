@@ -99,7 +99,7 @@ DSH 与 pi 读同一套 `SKILL.md` 格式（name + description 两个 frontmatte
 `customSkillDirs: ['D:/.../plugins/pi/skill']`（smoke 用的就是这招，避免污染全局）。
 **勿加** `allowed-tools` 等 Claude Code 旧字段——DSH 遇到旧字段名直接抛错。
 
-## 文件与"两份 bench-core"的纪律
+## 文件与“两份 bench-core”的纪律
 
 ```
 index.ts            Cordis 插件入口：defineTool ×5 + commands ×6 + subprocess 桥
@@ -110,7 +110,7 @@ bench-core.test.ts  哈希钉 + 行为冒烟（不依赖 DSH 安装树）
 plugin.test.ts      假 ctx + 真 defineTool 的框架层功能测试（23 项）
 ```
 
-`bench-core.ts` 与 pi 侧**改动必须双向同步**后，一起更新两处钉住的 sha256
+`bench-core.ts` 与 Pi 侧**改动必须双向同步**后，一起更新两处钉住的 sha256
 （`bench-core.test.ts`、`plugin.test.ts`）。漂移时测试红给你看。
 本次适配已在两份里同步修掉一个类型缺陷（`as typeof envelope` 自指引出 `never`；
 tsc 检查逮到的，纯类型改动、运行时行为不变）。
@@ -128,10 +128,10 @@ make smoke-dsh      # 真装载：对照实验 + 真 LLM 调用 + 失败分支 +
 1. **先证明检测有效**——故意写坏的插件必须被 DSH 报
    `failed to import/apply loader entry bench-broken`，否则整个脚本 abort；
 2. **断言数据来自源站**——上传唯一标记串，且测试 patch 把 `tool-pwsh`/`tool-fs`/
-   `tool-web` 等一切旁路 `disabled: true`：输出里出现标记只可能经过我们的工具
-   （第一轮实测就靠这条抓到了"模型自己跑 CLI 拿数据"的假通过路径）；
+   `tool-web` 等一切旁路 `disabled: true`：输出里出现标记只可能经过本插件的工具
+   （第一轮实测就靠这条抓到了“模型自己跑 CLI 拿数据”的假通过路径）；
 3. **失败必须是失败**——not_found/越界/断网/缺 bench 四类分支若被当成成功即 FAIL；
-4. SKIP（缺 node/DSH 安装树/模型凭据）打印"不是通过"，与 PASS 严格区分。
+4. SKIP（缺 node/DSH 安装树/模型凭据）打印“不是通过”，与 PASS 严格区分。
 
 ## 与 Pi 方言的差异备忘（写代码时最容易踩的）
 
@@ -144,18 +144,14 @@ make smoke-dsh      # 真装载：对照实验 + 真 LLM 调用 + 失败分支 +
 | slash 命令 | 注入文本给模型 / `setEditorText` | handler 直接在 agent 上执行、不过模型；返回 `CommandResult` 文本由 UI 渲染 |
 | 错误 | throw → isError | 同：throw（工具）/ `kind:'error'`（命令）；包装成正常返回会被当成功 |
 
-## 本机实测核实记录（交接文档 §12 的落地）
+## 框架事实的核实结论在哪
 
-| 项 | 结论 | 证据 |
-|---|---|---|
-| A 装载 | patch `insert` 的相对 `name` 按 **patch 文件所在目录** 锚定为 file URL；ESM 不补扩展名/不猜 index，必须给全文件名；模块裸导入自插件文件位置沿目录上溯命中 `profiles/node_modules` | `dsh-app-boot/src/index.ts` `anchorInsertedPluginNames` + smoke 实跑 |
-| B env | 仅凭证形状（KEY/SECRET/TOKEN）与 `DSH_*` 被剥；插件全程用显式 `home` 配置，无凭据 env 参与 | `dsh-subprocess/src/index.ts:45,64` + smoke D/E 段 |
-| C 审批 | 第三方工具**不**被 `dsh-user-approval` 门控（`tools/pre-execute` 消费者全树检索只有 hooks 桥与 jobs）；headless 真会话直跑成功 | 检索 + smoke D 段 |
-| D 卡片 | `card` 全集：call 侧 `generic|terminal|diff`，result 侧另加 `search|read|web`。本插件全用 generic | `dsh-tools/src/presentation.ts` |
-| E 命令展示 | `CommandResult {kind:'success', text}` 即"把正文展示给用户"的原语（UI 直接渲染 handler 文本） | `dsh-commands/src/types.ts` + normalizeResult |
-| F headless | `dsh --profile headless "task"`：stdout=最终答案、stderr=推理流与错误、退出码 0/1；**不**派发 slash 命令（task 恒走模型） | `dsh-headless/src/index.ts` + smoke 实跑 |
-| G TS 装载 | Node 26 原生跑 `.ts`（erasable syntax 即可，无构建）；`import type` 运行时归零，可放心用来侧载服务声明 | smoke 实跑 |
-| H 文档缺口 | `docs/client.md` §11 已补 `canceled` / `local_error` 两个错误码 | 本次一并修改 |
+装载方式、环境净化范围、审批门控、`card` 枚举、命令展示原语、headless 形态、
+TS 装载方式、错误码文档缺口——这 8 项的核实结论与证据集中在
+[`docs/handover-dsh.md` §12](../../../docs/handover-dsh.md)，**本文件不再重复一份**
+（同一事实抄两处必然漂移，见 `docs/README.md` §0 的权威层级）。
+
+本文只保留日常安装与开发真正要用的部分：上面三条装载路线、配置表、差异速查表。
 
 ## 已知限制
 
