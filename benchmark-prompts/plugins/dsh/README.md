@@ -48,7 +48,7 @@ dsh --profile web --patch 'D:\绝对路径\patch.yml'
 ### B. 长期安装 —— `dsh plugin add`
 
 ```bash
-dsh plugin --profile web add file:D:/Code/Temp/Web/benchmark-prompts/plugins/dsh
+dsh plugin --profile web add file:<仓库根>/benchmark-prompts/plugins/dsh
 ```
 
 包内 `package.json` 声明了 `dsh.bundle.patch → cordis.patch.yml`，
@@ -61,7 +61,7 @@ pnpm `file:` 是**复制**语义：改了源码要重新 `add` 一次（日常�
 在 profile 目录挂一个 **junction** 指回仓库：
 
 ```bat
-mklink /J %USERPROFILE%\.dsh\profiles\web\plugins\dsh D:\Code\Temp\Web\benchmark-prompts\plugins\dsh
+mklink /J %USERPROFILE%\.dsh\profiles\web\plugins\dsh <仓库根 Windows 路径>\benchmark-prompts\plugins\dsh
 ```
 
 再在 `~/.dsh/profiles/web/cordis.patch.yml` 里放路线 A 的 `- insert:` 块

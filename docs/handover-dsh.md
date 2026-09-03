@@ -14,7 +14,7 @@
 > 写作时间：2026-09-03。代码基线：`benchmark-prompts/` M1–M4（Pi + DSH 均已完成）。
 >
 > **路径约定**：本文里 `benchmark-prompts/…` 与 `docs/…` 均相对于仓库根
-> `D:/Code/Temp/Web/`；`~` 指本机用户目录（`C:\Users\<you>`，Windows 上实测可用）。
+> （下面写作 `<仓库根>`）；`~` 指本机用户目录（Windows 上实测可用）。
 >
 > **本文所有 DSH 结论均为本机实测所得，非推测。** 未实现前标注为“未核实”的部分
 > 已由实现阶段逐条落地（见 §12），保留原文供追溯。
@@ -746,7 +746,9 @@ docs/client.md    §5 命令、§11 退出码（注意 §12-H 的缺口）
 docs/api.md       冻结的 HTTP 契约（你不需要直接碰它）
 ```
 
-**Pi 官方文档**（对照用）：`D:\Scoop\apps\pi-coding-agent\0.84.4\docs\extensions.md`
+**Pi 官方文档**（对照用）：随 pi 发行版一同安装在
+`<pi 安装目录>/docs/extensions.md`（用 `command -v pi` 定位后向上找）。
+DSH 侧的等价资料就在本机：`~/.dsh/profiles/node_modules/@deepseek-ai/<包>/src/`。
 
 ---
 
