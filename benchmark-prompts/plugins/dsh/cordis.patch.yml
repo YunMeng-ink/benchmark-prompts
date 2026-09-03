@@ -1,0 +1,8 @@
+# Bundle patch layer: mounts the bench plugin itself.
+# Relative entry names are anchored by dsh-app-boot to this file's directory,
+# so the copy installed under a profile's node_modules resolves against it.
+# Config overrides go through `dsh plugin`-installed defaults or your own
+# profile-level cordis.patch.yml patch targeting `id: bench` (see README.md).
+- insert:
+    - id: bench
+      name: './index.ts'

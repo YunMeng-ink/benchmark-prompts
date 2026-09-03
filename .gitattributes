@@ -1,0 +1,35 @@
+# 统一行尾：仓库内一律 LF。
+#
+# 为什么必须显式写：Windows 上 git 常配 core.autocrlf=true，检出时会把文本
+# 换成 CRLF —— 那会让 scripts/*.sh 在 Linux/macOS 上因 `\r` 直接跑不起来，
+# 而 Makefile 调用它们正是本项目的主要验证入口。不依赖各人的本地配置。
+
+* text=auto eol=lf
+
+# 换行敏感：必须是 LF
+*.sh        text eol=lf
+Makefile    text eol=lf
+*.mk        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.go        text eol=lf
+*.ts        text eol=lf
+*.mjs       text eol=lf
+*.md        text eol=lf
+*.json      text eol=lf
+*.sql       text eol=lf
+gitignore   text eol=lf
+
+# 二进制：禁止任何换行/属性转换（发布产物虽不入库，交叉编译中间产物可能误加）
+*.exe       binary
+*.gz        binary
+*.tar       binary
+*.zip       binary
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.zstd      binary
+
+# 差异可读性
+*.go        diff=golang
+CHANGELOG.md export-ignore

@@ -1,0 +1,28 @@
+{
+  "name": "dsh-bench",
+  "version": "0.1.0",
+  "description": "Benchmark prompt testing tools (bench_random/bench_get/bench_score/bench_catalog/bench_upload) for DeepSeek Harness",
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "index.ts",
+    "bench-core.ts",
+    "cordis.patch.yml"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-commands": "*",
+    "@deepseek-ai/dsh-subprocess": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "license": "MIT"
+}

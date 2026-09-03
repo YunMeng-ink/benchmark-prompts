@@ -1,0 +1,17 @@
+# 与本仓库无关的旁侧项目（同目录下另一个独立 git 仓库）
+/green-gamma/
+
+# 依赖与产物
+node_modules/
+/benchmark-prompts/dist/
+
+# 编辑器/系统
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+!/.vscode/extensions.json
+# 私人笔记：不入库（公开仓库）。本地文件保留不动。
+/初始构想.md
+/方案与可行性研究.md

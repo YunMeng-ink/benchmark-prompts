@@ -1,0 +1,45 @@
+{
+	"$schema": "https://json.schemastore.org/biome",
+	"files": {
+		"includes": ["**/plugins/pi/extension/**/*.ts", "**/plugins/dsh/**/*.ts", "!**/dist", "!**/node_modules", "!**/.smoke*"]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"indentWidth": 2,
+		"lineWidth": 120
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"semicolons": "always",
+			"trailingCommas": "all"
+		}
+	},
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["**/plugins/dsh/*.test.ts", "**/plugins/pi/extension/*.test.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": { "noExplicitAny": "off" }
+				}
+			}
+		}
+	],
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"style": {
+				"noNonNullAssertion": "error"
+			}
+		}
+	}
+}

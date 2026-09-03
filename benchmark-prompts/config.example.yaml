@@ -1,0 +1,47 @@
+# 源站配置示例。字段权威说明见 docs/architecture.md §4。
+# 启动： bench-server -config config.example.yaml -dev
+
+server:
+  addr: ":8080"          # 生产改为 ":443" 并配置证书
+  read_timeout: 10s
+  write_timeout: 20s
+  tls_cert: ""           # 留空 + -dev => 明文 HTTP
+  tls_key: ""
+
+store:
+  path: ./bench.db
+  migrate: true
+
+auth:
+  readonly_anonymous: true
+  max_clock_skew: 300s
+
+ratelimit:
+  window: 60s
+  anonymous:
+    meta: 10
+    list: 60
+    random: 60
+    get: 60
+    delta: 5
+  authed:
+    meta: 60
+    list: 300
+    random: 300
+    get: 300
+    delta: 30
+    scores: 30
+    upload: 10
+
+bandwidth:
+  watch_enabled: true    # 2M 带宽看门狗：超阈值时降级 delta/list
+  max_mbps: 1.6
+  degrade: [delta, list]
+
+cors:
+  allowed_origins: ["*"] # 生产填前端 CDN 域名
+
+moderation:
+  enabled: true
+  banned_words_file: ""  # 留空则只做长度/格式校验
+  max_prompt_len: 8192

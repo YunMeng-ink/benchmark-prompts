@@ -1,0 +1,19 @@
+# 构建产物与本地数据
+/dist/
+/.smoke*/
+/.dsh-exp/
+/.dsh-typecheck/
+/plugins/dsh/node_modules
+*.db
+*.db-shm
+*.db-wal
+*.exe
+coverage.out
+
+# 本地真实配置（可能含密钥），只提交 config.example.yaml
+/config.yaml
+*.local.yaml
+
+# 备份
+/backup/
+*.bak
