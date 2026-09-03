@@ -440,7 +440,7 @@ func (s *Store) PruneSnapshots(ctx context.Context, keepSeconds int64) error {
 
 // UpsertScore 写入评分；同一 (prompt, device) 幂等覆盖，返回聚合结果。
 func (s *Store) UpsertScore(ctx context.Context, promptID string, value int, deviceID string) (avg float64, count int64, err error) {
-	if err := s.assertPublic(ctx, promptID); err != nil {
+	if err := s.AssertPublic(ctx, promptID); err != nil {
 		return 0, 0, err
 	}
 	now := time.Now().Unix()
@@ -469,7 +469,9 @@ func (s *Store) ScoreStats(ctx context.Context, promptID string) (float64, int64
 	return avg.Float64, n, nil
 }
 
-func (s *Store) assertPublic(ctx context.Context, id string) error {
+// AssertPublic 校验 id 是否存在且处于公开状态；不存在或未公开一律返回 ErrNotFound。
+// （导出给 api 层做只读统计端点的廉价守卫，避免为查存在性而读整个正文。）
+func (s *Store) AssertPublic(ctx context.Context, id string) error {
 	var one int
 	err := s.db.QueryRowContext(ctx,
 		"SELECT 1 FROM prompts WHERE id=? AND "+publicStatuses,

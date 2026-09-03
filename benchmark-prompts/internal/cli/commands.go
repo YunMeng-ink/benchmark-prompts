@@ -148,7 +148,7 @@ func (a *App) cmdRandom(ctx context.Context, g *globals, _ []string) error {
 	return a.emitPrompt(g, p)
 }
 
-// maxAllPages 限制 --all 的翻页规模，防止一条命令把 2M 带宽打满。
+// maxAllPages 限制 --all 的翻页规模，防止一条命令把源站带宽打满。
 const maxAllPages = 50
 
 func (a *App) cmdList(ctx context.Context, g *globals) error {

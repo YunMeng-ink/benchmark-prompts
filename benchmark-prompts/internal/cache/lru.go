@@ -16,7 +16,7 @@ type entry struct {
 // LRU 并发安全的最近最少使用缓存。
 //
 // 缓存值直接存最终响应字节（含 gzip 结果），避免同一提示词被反复压缩
-// —— 这是 2M 带宽约束下最重要的省 CPU/省延迟手段。
+// —— 这是源站带宽约束下最重要的省 CPU/省延迟手段。
 type LRU struct {
 	mu    sync.Mutex
 	max   int

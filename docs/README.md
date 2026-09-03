@@ -38,6 +38,8 @@
 | **DSH** 插件 API 形状与本机证据 | [handover-dsh.md](./handover-dsh.md) §2–§8（源码路径 + 行号） | `plugins.md` §4 只给结论摘要 |
 | 插件**安装/使用/装载路线** | `../benchmark-prompts/plugins/{pi,dsh}/README.md`（由实现者维护） | `plugins.md` 不写安装步骤 |
 | 适配层规格与两框架对齐表 | [plugins.md](./plugins.md) | — |
+| 前端**规格**（页面、约束、体积基线） | [frontend.md](./frontend.md) | `../benchmark-prompts/web/README.md` 只讲怎么用、注意什么 |
+| 前端**部署步骤 / 缓存头 / CORS 白名单** | [deployment.md](./deployment.md) §7 | `frontend.md` §9 与 `web/README.md` 均只指向它 |
 | **测试项数 / 覆盖率 / 门禁状态** | [testing.md](./testing.md) §10 与 `../benchmark-prompts/README.md` | 其他地方引用时写目标名（`make check`）而非抄数字 |
 | 里程碑与发布记录 | [`../benchmark-prompts/CHANGELOG.md`](../benchmark-prompts/CHANGELOG.md)；ADR 表在 [architecture.md](./architecture.md) | 私人笔记（方案研究）不入库 |
 | **代码与测试本身** | ✅ **最高优先级** | 与文档矛盾时以代码为准，**并立即回写文档** |
@@ -102,14 +104,14 @@
 | CLI | 标准库 `flag` + 内置子命令分发器 | **不引入 cobra**，见 `architecture.md` ADR-11；直接依赖共 2 个 |
 | 配置 | YAML（`gopkg.in/yaml.v3`） | |
 | 签名 | 标准库 `crypto/hmac` + `crypto/sha256` | |
-| 前端 | 静态 HTML + 原生 JS（无框架）或轻量构建 | 见 `frontend.md` |
+| 前端 | Astro（`output: 'static'`）+ Preact 岛 | 见 `frontend.md` §1；产物纯静态上 CDN |
 | 测试 | 标准库 `testing` + `httptest` | |
 
 > **备选方案**：若团队无 Go 工具链，可整体切换 **Node/TypeScript**（Fastify + better-sqlite3 + pnpm），接口契约不变。切换成本点见 `architecture.md` §7。当前以 **Go 为唯一主线**。
 
 ### 2.1 实际工具链情况（已真实验证）
 
-源站已在下述环境**编译、vet、`-race` 测试、45 项端到端冒烟全部跑通**：
+源站已在下述环境**编译、vet、`-race` 测试、47 项端到端冒烟全部跑通**：
 
 | 项 | 实际情况 |
 |----|----------|
@@ -169,7 +171,7 @@ benchmark-prompts/
 ├── plugins/
 │   ├── pi/                   # Pi 适配：extension/index.ts（工具+命令）+ skill/
 │   └── dsh/                    # DSH 侧适配（Cordis 插件薄胶水，M4 已实现并真机验证）
-├── web/                        # 前端静态资源（发布到 CDN）
+├── web/                        # 前端：Astro + Preact 岛，构建后整目录上 CDN（零回源）
 ├── internal/store/migrations/  # SQL 迁移（go:embed 内嵌，故无顶层 migrations/）
 ├── cmd/server 另有 -review/-approve/-reject/-backup/-put-key 运维子命令
 ├── deploy/                     # systemd unit、Dockerfile（可选）、备份脚本

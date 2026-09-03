@@ -103,6 +103,29 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	s.renderOK(w, http.StatusOK, p, nil)
 }
 
+// handleScoreStats 实现 GET /v1/prompts/{id}/score —— 只读打分统计。
+// 前端「查看打分」需要它：avg/count 原本只在 POST /v1/scores 的响应里出现。
+// 不设 ETag：分数随每次提交变化，而聚合查询极轻，no-store 更诚实。
+func (s *Server) handleScoreStats(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	// 未公开与不存在同样返 404，不泄露“这条存在但隐藏”这个信息。
+	if err := s.st.AssertPublic(r.Context(), id); err != nil {
+		s.renderErr(w, ErrNotFound.WithMessage("提示词不存在或未公开"))
+		return
+	}
+	avg, count, err := s.st.ScoreStats(r.Context(), id)
+	if err != nil {
+		s.renderErr(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.renderOK(w, http.StatusOK, map[string]any{
+		"id":    id,
+		"avg":   math.Round(avg*100) / 100,
+		"count": count,
+	}, nil)
+}
+
 // handleRandom 实现 GET /v1/prompts/random。必须在 {id} 之前注册，
 // 但 Go 1.22+ ServeMux 会让静态段优先于通配段，因此不会被 {id} 吞掉。
 func (s *Server) handleRandom(w http.ResponseWriter, r *http.Request) {

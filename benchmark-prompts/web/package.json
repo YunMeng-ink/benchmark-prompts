@@ -1,0 +1,22 @@
+{
+  "name": "bench-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "个人测试用 benchmark 提示词平台的前端站点（Astro 纯静态 + Preact 岛，全量上 CDN、零回源）",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/preact": "6.0.5",
+    "astro": "7.2.10",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.7",
+    "typescript": "5.9.3"
+  }
+}

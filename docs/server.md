@@ -168,6 +168,14 @@ body 校验：len(content)∈[1,8192] ；clientId 必填
 返回 202 { id, s: "pending" }
 ```
 
+### 6.8 GET /v1/prompts/{id}/score（2026-09-03 追加）
+```
+store.AssertPublic(id) ；未公开或不存在 → 404（两者不可区分，不泄露存在性）
+avg, count = store.ScoreStats(id)
+data = { id, avg, count }   // 无人打分是 0/0，不是 404
+Cache-Control: no-store ；限流计入 get 桶（成本同级）
+```
+
 ## 7. 带宽看门狗（`internal/metrics` + `internal/api`）
 
 - 后台协程每秒统计出站字节速率（滑动 60s 均值）。

@@ -8,8 +8,36 @@
 
 ## [未发布]
 
+### 新增
+
+- **前端站点 `web/`（M5）**：Astro 纯静态输出 + Preact 岛，四个 hash 路由
+  （列表 / 随机 / 详情 / 上传）+ 打分区 + 连接设置。产物整目录上 CDN、零回源；
+  构建时报告真实体积（当前首屏 19.7 KB gzip）。用法见 `web/README.md`。
+- **只读端点 `GET /v1/prompts/{id}/score`**：返回 `{id, avg, count}`，无人打分是
+  `0/0` 而非 404。动机：旧契约下 `avg`/`count` 只出现在 `POST /v1/scores` 的响应里，
+  前端「查看打分」在没有提交过的条数上什么也读不到。契约按「只增不改不删」
+  追加为 `docs/api.md` §3.8。
+- **门禁**：`make web-install` / `web-build` / `web-check` / `web-preview` / `web-size` /
+  `smoke-web`（45 项，真源站 + 真产物 + 直接 import 浏览器那份 `api.ts`）。
+  `make check` 现在包含前端静态与类型检查。
+
+### 变更
+
+- **源站带宽套餐 2M → 10M**：`bandwidth.max_mbps` 默认值 1.6 → 8.0（= 10 Mbps × 0.8），
+  监控告警与容量分级同步抬高。阈值的**唯一权威定义收敛到 `docs/deployment.md` §6**，
+  其余文档与代码注释不再重复这个数字。
+  ⚠️ **v0.1.0 已发布的二进制仍携带 1.6 默认值**（编译进 `internal/config`）；
+  在用旧产物的部署里需显式写 `bandwidth.max_mbps: 8.0`，否则看门狗会在新套餐下
+  提前降级。下一个版本发布后该差异自然消失。
+
 ### 修复
 
+- **endpoint 写成带 `/v1` 的形式会换来一个含糊的 405**：SDK 自己会拼 `/v1/...`，
+  而 `NormalizeEndpoint` 原先不剔尾部的 `/v1`，于是请求打到 `/v1/v1/prompts`；
+  又因为源站注册了 `OPTIONS /` 兜底（路径匹上、方法匹不上），Go 返回的是纯文本
+  "Method Not Allowed" 而不是契约信封，CLI 只能报 `bad_response`。
+  现在两端一致：Go 的 `NormalizeEndpoint` 与前端 `normalizeBase()` 都会归一到源站根。
+  这个坑的触发概率不低——`docs/api.md` §1 的 Base URL 示例就是带 `/v1` 的写法。
 - **`bench` CLI 不关闭 SQLite 缓存句柄** —— `clientFor` 的 7 个调用点均未 `Close()`。
   对 Linux/macOS 用户不可见（进程退出时 OS 回收），但在 Windows 上未关的句柄会
   阻塞临时目录删除，导致测试集偶发失败且**失败包在 `internal/cli` 与 `pkg/client`

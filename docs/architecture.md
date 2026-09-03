@@ -82,7 +82,7 @@ ratelimit:
 
 bandwidth:
   watch_enabled: true
-  max_mbps: 1.6                     # 出站告警/降级阈值
+  max_mbps: 8.0                     # 出站告警/降级阈值，推导见 deployment.md §6
   degrade: [delta, list]            # 优先级最低的降级端点
 
 moderation:
@@ -139,7 +139,7 @@ var (
 |------|------|------|
 | ADR-1 | 源站 Go + SQLite 单机单进程 | 2H2G 资源余量大，避免多进程/多服务运维 |
 | ADR-2 | 纯 Go SQLite 驱动（无 CGO） | 交叉编译零成本（供多平台 CLI） |
-| ADR-3 | 前端零回源 · 纯静态 | 2M 带宽硬约束，前端必须脱离源站 |
+| ADR-3 | 前端零回源 · 纯静态 | 源站带宽有限，前端资产必须完全脱离源站（阈值见 `deployment.md` §6） |
 | ADR-4 | 增量同步用“目录 hash + delta 变更集” | 避免全量拉取，最小化重复流量 |
 | ADR-5 | 列表返回 PromptSummary（无正文） | 正文只在 get/random/delta 返回，省带宽 |
 | ADR-6 | 能力下沉 CLI，插件只做薄胶水 | 解 DSH/Pi 双框架适配 |

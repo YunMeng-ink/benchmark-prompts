@@ -75,7 +75,8 @@ type RateLimit struct {
 	Authed    map[string]int `yaml:"authed"`
 }
 
-// Bandwidth 2M 带宽看门狗配置。
+// Bandwidth 带宽看门狗配置。阈值由来与校准方法见 docs/deployment.md，
+// 不要在别处重复这个数（改一处要扫全仓库）。
 type Bandwidth struct {
 	WatchEnabled bool     `yaml:"watch_enabled"`
 	MaxMbps      float64  `yaml:"max_mbps"`
@@ -113,7 +114,7 @@ func Default() *Config {
 		},
 		Bandwidth: Bandwidth{
 			WatchEnabled: true,
-			MaxMbps:      1.6,
+			MaxMbps:      8.0,
 			Degrade:      []string{"delta", "list"},
 		},
 		CORS:       CORS{AllowedOrigins: []string{"*"}},

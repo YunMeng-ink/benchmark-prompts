@@ -80,7 +80,7 @@ func TestContractRandom(t *testing.T) {
 不再是“概念示意”——下面每一项都在本机真实跑过：
 
 ```bash
-# 一条命令跑完开发门禁（Go + TS）
+# 一条命令跑完开发门禁（Go + TS + 前端）
 make check
 
 # 它展开为：
@@ -90,8 +90,9 @@ go vet ./...
 staticcheck ./...                                       # 2026.2.1，当前零发现
 go build -trimpath ./cmd/server ./cmd/cli
 make build-cli
-go test -race -count=1 ./...                            # 13 包
-biome check plugins/pi/extension/ plugins/dsh/          # 7 文件，0 error 0 warning
+go test -race -count=1 ./...                            # 14 包
+biome check plugins/pi/extension/ plugins/dsh/ web/src/ # 17 文件，0 error 0 warning
+astro check                                          # 前端 0 errors（make web-check）
 node --test plugins/pi/extension/bench-core.test.ts             # 33
 node --test plugins/dsh/bench-core.test.ts                      # 7（含哈希钉）
 node --import ./scripts/dsh-module-hook.mjs --test plugins/dsh/plugin.test.ts   # 23
@@ -100,17 +101,18 @@ node --import ./scripts/dsh-module-hook.mjs --test plugins/dsh/plugin.test.ts   
 **门禁之外必跑**（`make check` 不涵盖）：
 
 ```bash
-make smoke            # 45 项，服务端真实 HTTP + 真实 SQLite
+make smoke            # 47 项，服务端真实 HTTP + 真实 SQLite
 make smoke-cli        # 35 项，真实 bench 二进制
 make typecheck-dsh     # tsc noEmit 对 DSH 真实 .d.ts
 make release           # 全平台交叉编译 + 打包 + sha256sums + RELEASE-INFO
 make release-verify    # 验证发布产物
-
-产物矩阵、发布流程与用户侧校验见 `deployment.md` §1（唯一权威，此处不重复）。
 make smoke-pi         # 12 项，真实 pi + 真实 LLM（无凭据则 SKIP）
 make smoke-dsh        # 19 项，真 DSH headless + 真 LLM（无安装树则 SKIP）
+make smoke-web        # 45 项，前端真源站 + 真产物 + 浏览器那份 api.ts
 make contract         # 重新采集 bench --json 地面数据
 ```
+
+产物矩阵、发布流程与用户侧校验见 `deployment.md` §1（唯一权威，此处不重复）。
 
 未纳入且**本机不可用**的可选工具（已核实，不要假设它们在）：
 `golangci-lint`、`govulncheck`。后者建议上服务器/CI 后补做（直接依赖只有
@@ -118,7 +120,7 @@ make contract         # 重新采集 bench --json 地面数据
 
 ## 9. 验收标准（MVP 就绪定义）
 
-- [x] 7 个端点全部按 `api.md` 契约通过
+- [x] 8 个端点全部按 `api.md` 契约通过
 - [x] gzip + ETag/304 + delta 增量生效
 - [x] 限流 + 带宽看门狗生效
 - [x] 备份 + 审核运维链路就绪
@@ -140,7 +142,7 @@ make contract         # 重新采集 bench --json 地面数据
 | TS lint/格式 | `biome check plugins/pi/extension/ plugins/dsh/` | ✅ **7 个文件** 0 error 0 warning（120 列 + tab，对齐 Pi 官方示例风格） |
 | TS 单测 | `make test-ts`（node --test） | ✅ **63 项**：Pi 侧 33（含 3 项真实 bench 集成、2 项 skill 结构校验）+ dsh bench-core 7（含哈希钉）+ **dsh 插件层 23**（假 ctx + 真 `defineTool`） |
 | DSH 类型检查 | `make typecheck-dsh` | ✅ `tsc noEmit` 对着 DSH 真实 `.d.ts`（DSH 包附 `src/`，可类型检查 —— pi 入口做不到） |
-| 服务端端到端 | `bash scripts/smoke.sh` | ✅ **45/45** |
+| 服务端端到端 | `bash scripts/smoke.sh` | ✅ **47/47** |
 | CLI 二进制端到端 | `bash scripts/smoke-cli.sh` | ✅ **35/35** |
 | Pi 扩展真实验证 | `bash scripts/smoke-pi.sh` | ✅ **12/12**（真实 pi 加载 + 真实 LLM 调用工具 + 失败分支） |
 | DSH 插件真实验证 | `bash scripts/smoke-dsh.sh` | ✅ **19/19**（headless 真装载 + 真 LLM + HMAC 写路径 + 四类失败分支 + skill 发现） |
@@ -166,7 +168,7 @@ make contract         # 重新采集 bench --json 地面数据
 
 ### 被测试抓出的真实缺陷（按严重度）
 
-1. **`compressMW` 未接入中间件链** —— gzip 从未生效。2M 带宽方案的第一要件，
+1. **`compressMW` 未接入中间件链** —— gzip 从未生效。带宽方案的第一要件，
    仅靠写文档发现不了，由 `TestContractGzipRoundTrip` 抓出。
 2. **同步伪代码自带丢数据 bug**（`docs/client.md` §4 原稿）—— `hash = d.since`
    写在翻页循环内，第二页会把新 hash 回喂服务端 → 服务端判定“已最新”返回空集 →

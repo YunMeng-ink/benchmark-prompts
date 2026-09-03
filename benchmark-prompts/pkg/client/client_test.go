@@ -613,6 +613,12 @@ func TestNormalizeEndpoint(t *testing.T) {
 		"https://bench.example.com": "https://bench.example.com",
 		"http://127.0.0.1:8080/":    "http://127.0.0.1:8080",
 		"  https://a.b  ":           "https://a.b",
+		// docs/api.md 的 Base URL 带 /v1，用户会原样粘过来（SDK 自己会再拼 /v1）。
+		"https://bench.example.com/v1": "https://bench.example.com",
+		"http://127.0.0.1:8080/v1/":    "http://127.0.0.1:8080",
+		"bench.example.com/v1":         "https://bench.example.com",
+		"https://api.example.com/v1x":  "https://api.example.com/v1x", // 不是版本段，不得误剔
+		"https://example.com/a/v1":     "https://example.com/a",
 	}
 	for in, want := range ok {
 		got, err := NormalizeEndpoint(in)

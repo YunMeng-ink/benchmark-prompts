@@ -80,6 +80,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/prompts/random", s.route("random", s.handleRandom))
 	mux.HandleFunc("GET /v1/prompts/delta", s.route("delta", s.handleDelta))
 	mux.HandleFunc("GET /v1/prompts/{id}", s.route("get", s.handleGet))
+	mux.HandleFunc("GET /v1/prompts/{id}/score", s.route("get", s.handleScoreStats))
 
 	// 写端点：鉴权 → 限流 → handler（限流必须在鉴权之后，才能按身份分桶）
 	mux.HandleFunc("POST /v1/scores", s.writeRoute("scores", s.handleScore))
@@ -92,7 +93,7 @@ func (s *Server) Routes() http.Handler {
 
 	// 由内向外依次包装（最外层最后赋值）。
 	// compress 必须包在 metrics 之内：这样 gzip 压缩后的字节才流入 metricsWriter，
-	// BytesOut 统计到的才是真实出站量（2M 带宽看门狗的输入依据）。
+	// BytesOut 统计到的才是真实出站量（带宽看门狗的输入依据）。
 	var h http.Handler = mux
 	h = s.compressMW(h)
 	h = s.metricsMW(h)

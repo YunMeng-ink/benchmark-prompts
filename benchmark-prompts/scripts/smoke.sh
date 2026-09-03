@@ -211,6 +211,16 @@ echo "$s3" | grep -q '"count":2' && ok "第二设备计入 count=2" || bad "coun
 code="$("$CURL" -s -o /dev/null -w '%{http_code}' -X POST "$API/scores" -H "Authorization: Bearer local-key" -d "{\"id\":\"$ID1\",\"value\":9,\"deviceId\":\"dev-3\"}")"
 [ "$code" = "422" ] && ok "value 越界 422" || bad "越界应 422" "got $code"
 
+# 只读统计端点（docs/api.md §3.8）：不带任何鉴权头，且分数与 POST 响应一致。
+# 上两行后 dev-1=3、dev-2=5 → avg=4、count=2；map 序列化按键排序，所以可连续匹配。
+st="$("$CURL" -sS "$API/prompts/$ID1/score")"
+case "$st" in
+  *'"avg":4,"count":2'*) ok "只读统计反映已提交分数（匿名可读）" ;;
+  *) bad "统计端点异常" "$st" ;;
+esac
+code="$("$CURL" -s -o /dev/null -w '%{http_code}' "$API/prompts/p_deadbeef/score")"
+[ "$code" = "404" ] && ok "不存在 id 的统计 404" || bad "统计应 404" "got $code"
+
 # ---------- 参数与运维 ----------
 desc "参数校验与运维端点"
 code="$("$CURL" -s -o /dev/null -w '%{http_code}' "$API/prompts?limit=abc")"

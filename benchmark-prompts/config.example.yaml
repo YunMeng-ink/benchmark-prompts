@@ -34,8 +34,8 @@ ratelimit:
     upload: 10
 
 bandwidth:
-  watch_enabled: true    # 2M 带宽看门狗：超阈值时降级 delta/list
-  max_mbps: 1.6
+  watch_enabled: true    # 带宽看门狗：超阈值时降级 delta/list
+  max_mbps: 8.0            # = 源站 10M 套餐 × 0.8；换套餐只改这里，推导见 docs/deployment.md
   degrade: [delta, list]
 
 cors:

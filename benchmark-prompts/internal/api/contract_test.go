@@ -209,7 +209,7 @@ func TestContractListExcludesPromptContent(t *testing.T) {
 		t.Fatalf("应有 1 条摘要，得到 %d", len(out.Items))
 	}
 	if _, ok := out.Items[0]["p"]; ok {
-		t.Fatalf("列表摘要绝不能包含正文 p（2M 带宽硬约束）")
+		t.Fatalf("列表摘要绝不能包含正文 p（省带宽硬约束，见 docs/frontend.md §4）")
 	}
 	if out.Items[0]["id"] != id {
 		t.Fatalf("id 不符，期望 %s 得到 %v", id, out.Items[0]["id"])
@@ -246,6 +246,72 @@ func TestContractGetReturnsFullPromptAnd404Code(t *testing.T) {
 	e2 := decodeEnv(t, rec2.Body.Bytes())
 	if e2.OK || e2.Error == nil || e2.Error.Code != "not_found" {
 		t.Fatalf("错误码不符: %+v", e2.Error)
+	}
+}
+
+// TestContractScoreStatsIsReadable 覆盖 GET /v1/prompts/{id}/score（前端“查看打分”依赖，
+// 见 docs/api.md §3.8）：无分数时返 0/0 而不是 404；未公开与不存在同样 404；
+// 属只读端点，不带鉴权也必须可访问。
+func TestContractScoreStatsIsReadable(t *testing.T) {
+	h := newHarness(t)
+	h.seedKey("stats-key", "stats-secret")
+	id := h.publish("统计用正文", []string{"test"})
+	hidden := h.publish("审核中的那条", nil)
+	if err := h.st.SetStatus(context.Background(), hidden, model.StatusPending); err != nil {
+		t.Fatalf("改状态失败: %v", err)
+	}
+
+	stats := func(path string) (string, float64, int64, *httptest.ResponseRecorder) {
+		h.t.Helper()
+		rec := h.do(http.MethodGet, path, nil, nil)
+		if rec.Code != http.StatusOK {
+			return "", 0, 0, rec
+		}
+		e := decodeEnv(t, rec.Body.Bytes())
+		var d struct {
+			ID    string  `json:"id"`
+			Avg   float64 `json:"avg"`
+			Count int64   `json:"count"`
+		}
+		if err := json.Unmarshal(e.Data, &d); err != nil {
+			t.Fatalf("统计载荷不符: %v / %s", err, e.Data)
+		}
+		return d.ID, d.Avg, d.Count, rec
+	}
+
+	// 1. 没人打过分为 0/0，而且不需要 Bearer。
+	gotID, avg, count, rec := stats("/v1/prompts/" + id + "/score")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("只读统计不该要求鉴权，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+	if gotID != id || count != 0 || avg != 0 {
+		t.Fatalf("无分数时期望 id=%s avg=0 count=0，得到 id=%s avg=%v count=%d", id, gotID, avg, count)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("分数会变，必须 no-store，得到 %q", cc)
+	}
+
+	// 2. 提交打分后，统计端点必须反映它（而不是只活在 POST 响应里）。
+	body, err := json.Marshal(map[string]any{"id": id, "value": 4, "deviceId": "dev-stats"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if rec := h.do(http.MethodPost, "/v1/scores", body, map[string]string{"Authorization": "Bearer stats-key"}); rec.Code != http.StatusOK {
+		t.Fatalf("打分应 200，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+	if _, avg, count, _ = stats("/v1/prompts/" + id + "/score"); count != 1 || avg != 4 {
+		t.Fatalf("打分后期望 avg=4 count=1，得到 avg=%v count=%d", avg, count)
+	}
+
+	// 3. 未公开与不存在一律 404 not_found，两者不可区分。
+	for _, path := range []string{"/v1/prompts/" + hidden + "/score", "/v1/prompts/p_absent/score"} {
+		rec := h.do(http.MethodGet, path, nil, nil)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s 应 404，得到 %d", path, rec.Code)
+		}
+		if e := decodeEnv(t, rec.Body.Bytes()); e.Error == nil || e.Error.Code != "not_found" {
+			t.Fatalf("%s 错误码应为 not_found，得到 %+v", path, e.Error)
+		}
 	}
 }
 

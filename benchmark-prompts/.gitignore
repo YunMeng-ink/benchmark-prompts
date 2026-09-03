@@ -17,3 +17,10 @@ coverage.out
 # 备份
 /backup/
 *.bak
+
+# 前端：依赖、构建产物、Astro 缓存、冒烟临时目录都不入库
+/web/node_modules/
+/web/dist/
+/web/.astro/
+/.smoke-web/
+/.webverify/

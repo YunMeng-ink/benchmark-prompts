@@ -5,8 +5,9 @@
 
 面向想在本地快速测一测模型能力的人：一句话抽题、原样投喂、给个 1–5 分。
 
-- **源站**：香港轻量服务器 2H2G2M + 亚太 CDN（无备案）。
-  2M 带宽是硬约束，所以前端全量走 CDN、API 只做 gzip + ETag/304 + 增量同步。
+- **源站**：香港轻量服务器 2H2G + 10M 带宽 + 亚太 CDN（无备案）。
+  带宽是有限资源，所以前端全量走 CDN（零回源）、API 用 gzip + ETag/304 + 增量同步。
+  阈值与容量策略只在 `docs/deployment.md` §6 定义，别处不重复这个数。
 - **技术栈**：Go + SQLite（仅 2 个直接依赖），纯 Go 驱动无需 CGO，交叉编译即得全平台单文件。
 - **多框架适配的解法**：能力全部下沉到 `bench` CLI，插件里**零业务逻辑**，
   只负责“调命令 + 展示结果”。这是唯一能跨语言（Go ↔ TS）复用的边界。
@@ -44,14 +45,8 @@ grep bench-v0.1.0-linux-amd64 sha256sums.txt | sha256sum -c -
 
 ```
 docs/                  开发文档（先读 docs/README.md，内含“谁是事实来源”层级）
-benchmark-prompts/     代码：cmd/ internal/ pkg/client/ plugins/ scripts/
+benchmark-prompts/     代码：cmd/ internal/ pkg/client/ plugins/ web/ scripts/
 ```
-
-> 仓库早期还有两份**私人笔记**（`初始构想.md` 原始需求、`方案与可行性研究.md`
-> 选型理由 / ADR / 里程碑）已加入 `.gitignore`，**不随本仓库发布**。
-> 其中仍然有效的结论已归入 `docs/`（架构决策见
-> [docs/architecture.md](./docs/architecture.md) 的 ADR 表，进度见
-> [CHANGELOG](./benchmark-prompts/CHANGELOG.md)）。
 
 想读文档的话，顺序是
 [docs/README.md](./docs/README.md) →
@@ -74,13 +69,6 @@ make smoke-cli         # CLI 二进制端到端
 make release           # 全平台交叉编译 + tar.gz + sha256sums.txt
 make release-verify    # 验证产物（字节级版本注入证据 + 校验值 + 真跑）
 ```
-
-## 状态
-
-M1 文档、M2 源站、M3 SDK/CLI、M4 双框架适配、发布工程均已完成；
-前端上 CDN（M5）与部署监控（M6）待做。逐项记录见
-[CHANGELOG](./benchmark-prompts/CHANGELOG.md) 与
-[docs/testing.md](./docs/testing.md) 的验收清单。
 
 ## License
 

@@ -763,7 +763,7 @@ DSH 侧的等价资料就在本机：`~/.dsh/profiles/node_modules/@deepseek-ai/
 
 回归基线（改完必须仍然全绿）：`make check` 一次跑完
 gofmt / vet / build / `go test -race`(13 包) / biome / `node --test`(pi 33 + dsh 7 + 插件层 23)；
-外加 `smoke.sh` 45/45、`smoke-cli.sh` 35/35、`smoke-pi.sh` **12/12**、`smoke-dsh.sh` 19/19。
+外加 `smoke.sh` 47/47（v0.1.0 发布时是 45/45，M5 补了打分统计端点的 2 项）、`smoke-cli.sh` 35/35、`smoke-pi.sh` **12/12**、`smoke-dsh.sh` 19/19。
 
 > **最后一条提醒**：本项目 M1 阶段的设计文档里，曾凭经验臆造过一个 DSH/Pi 的
 > `tools:` YAML 插件配置形（带 `handler: run:`），事后被证明完全不存在。

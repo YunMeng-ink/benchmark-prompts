@@ -4,29 +4,30 @@
 需求与方案属于私人笔记、不随仓库发布；开发文档见 [`docs/`](../docs/README.md)，
 对外契约见 [`docs/api.md`](../docs/api.md)，发布记录见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
-**部署形态**：香港（HK）轻量服务器 2H2G2M + 亚太 CDN（无备案）。
+**部署形态**：香港（HK）轻量服务器 2H2G + 10M 带宽 + 亚太 CDN（无备案）。
 前端静态资源全量走 CDN，**本服务只出 `/v1/*` JSON**。
 
 ## 状态
 
 | 模块 | 状态 |
 |------|------|
-| 7 个 API 端点 | ✅ 已实现，按 `docs/api.md` 契约测试通过 |
+| 8 个 API 端点 | ✅ 已实现，按 `docs/api.md` 契约测试通过 |
 | 鉴权（Bearer Key + HMAC 签名） | ✅ 已实现 |
 | 分级限流 / gzip / ETag 304 | ✅ 已实现 |
 | 增量同步（catalog hash + delta） | ✅ 已实现 |
-| 2M 带宽看门狗 | ✅ 已实现（单元验证，待真实流量压测） |
+| 带宽看门狗 | ✅ 已实现（单元验证，待真实流量压测） |
 | 审核队列与运维子命令 | ✅ 已实现 |
 | SDK `pkg/client`（缓存/ETag/增量同步/重试/签名） | ✅ 已实现（M3） |
 | `bench` CLI（meta/sync/get/random/list/score/upload/config/reset/version） | ✅ 已实现（M3） |
 | Pi 适配（5 个工具 + 6 个斜杠命令 + 配套 skill） | ✅ 已实现并真实验证（M4） |
 | DSH 适配 | ✅ **已实现并真实验证**（Cordis 插件：5 工具 + 6 命令 + skill 复用；`make smoke-dsh` 19/19，要点见 `plugins/dsh/README.md` 与 `../docs/handover-dsh.md`） |
+| 前端站点（列表/随机/详情/打分/上传） | ✅ 已实现并本地真验证（Astro 纯静态 + Preact 岛；`make smoke-web` 45/45，M5。上 CDN 属 M6） |
 | 发布工程（版本注入 / 8 平台产物 / 校验值 / 产物验证） | ✅ 已实现（`make release`、`make release-verify`） |
 | 前端 / 部署 | ⬜ 后续（M5、M6） |
 
 验证结果：`go build` ✅ ｜ `go vet` ✅ ｜ `staticcheck` 零发现 ｜ `gofmt` ✅ ｜
 `go test -race` **14/14 包通过** ｜
-聚合覆盖率 **78.3%** ｜ `scripts/smoke.sh` **45/45** ｜ `scripts/smoke-cli.sh` **35/35** ｜
+聚合覆盖率 **78.3%** ｜ `scripts/smoke.sh` **47/47** ｜ `scripts/smoke-cli.sh` **35/35** ｜
 `node --test` **40/40**（pi bench-core 33 + dsh bench-core 副本 7）+ **23/23**（dsh plugin.test）｜
 `make typecheck-dsh` ✅ ｜ `scripts/smoke-pi.sh` **12/12**、`scripts/smoke-dsh.sh` **19/19**（真实框架 + 真实 LLM 调用）。
 
@@ -79,11 +80,13 @@ internal/
   model/               领域结构与校验
   config/              YAML + 环境变量配置
   secretbox/           AES-GCM 加解密 HMAC secret
-scripts/               check.sh / smoke*.sh / dsh-module-hook.mjs / dsh-typecheck.sh
+scripts/               check.sh / smoke*.sh / web-api-check.mjs / web-asset-graph.mjs
+                     / web-size.sh / dsh-module-hook.mjs / dsh-typecheck.sh
 plugins/
   pi/                  Pi 适配（extension/index.ts + bench-core.ts + skill）
   dsh/                 DSH 适配（Cordis 插件：index.ts + 同一份 bench-core.ts + 两层测试）
 pkg/client/            公开 SDK：类型、错误码、签名、本地缓存、同步
+web/                 前端站点：Astro 纯静态 + Preact 岛，产物整目录上 CDN
 ```
 
 ## 运维子命令
@@ -108,7 +111,7 @@ bench-server -config c.yaml -backup  /backup/bench.db      # 一致性备份
 1. **只有 2 个直接依赖**：`modernc.org/sqlite`（纯 Go，无 CGO，交叉编译零成本）与
    `gopkg.in/yaml.v3`。路由用 Go 1.22 增强 `ServeMux`，LRU 自实现。
 2. **列表不返回正文**：`/v1/prompts` 只回 `PromptSummary`（`id/t/v/h`），正文仅在
-   `get`/`random`/`delta` 出现。这是 2M 带宽下最重要的取舍。
+   `get`/`random`/`delta` 出现。这是带宽受限源站上最重要的取舍。
 3. **`compress` 包在 `metrics` 之内**：`BytesOut` 统计到的才是真实压缩后字节，
    看门狗判断才准确。
 4. **正文只 `TrimSpace`，不折叠内部空白**：benchmark 提示词常为多行，折叠会破坏内容；
@@ -123,9 +126,10 @@ bench-server -config c.yaml -backup  /backup/bench.db      # 一致性备份
 ## 待办
 
 - [ ] 上 HK 服务器部署（systemd + TLS），见 `docs/deployment.md`
-- [ ] 真实流量下校准带宽看门狗阈值（当前 `max_mbps: 1.6`）
+- [ ] 真实流量下校准带宽看门狗阈值（权威值见 `docs/deployment.md` §6）
 - [x] M4：Pi 适配 ✅（12/12）+ DSH 适配 ✅（19/19）—— 调研、实现、真机验证均完成
-- [ ] M5：前端静态页上 CDN
+- [x] M5：前端站点已实现并本地验证（`make web-build` / `make smoke-web` 45/45）
+- [ ] 前端上 CDN（含两组缓存头与 CORS 白名单配置，属 M6）
 - [ ] 审核动作目前是命令行，量大时需补一个受保护的管理端点
 - [ ] CLI 分发：三平台二进制 + 一键安装脚本（`make build-all` 已就绪）
 

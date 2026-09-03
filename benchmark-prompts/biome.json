@@ -1,7 +1,15 @@
 {
 	"$schema": "https://json.schemastore.org/biome",
 	"files": {
-		"includes": ["**/plugins/pi/extension/**/*.ts", "**/plugins/dsh/**/*.ts", "!**/dist", "!**/node_modules", "!**/.smoke*"]
+		"includes": [
+			"**/plugins/pi/extension/**/*.ts",
+			"**/plugins/dsh/**/*.ts",
+			"**/web/src/**/*.ts",
+			"**/web/src/**/*.tsx",
+			"!**/dist",
+			"!**/node_modules",
+			"!**/.smoke*"
+		]
 	},
 	"formatter": {
 		"enabled": true,

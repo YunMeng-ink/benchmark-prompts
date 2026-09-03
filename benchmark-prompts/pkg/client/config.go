@@ -132,6 +132,11 @@ func NormalizeEndpoint(raw string) (string, error) {
 	if !strings.HasPrefix(v, "http://") && !strings.HasPrefix(v, "https://") {
 		return "", fmt.Errorf("endpoint 协议必须是 http/https，得到 %q", raw)
 	}
+	v = strings.TrimRight(v, "/")
+	// 容忍用户把 docs/api.md 里的 Base URL（含 /v1）直接粘过来：
+	// SDK 自己会拼 /v1/... 路径，不剔则变 /v1/v1/prompts，
+	// 而服务上注册了 OPTIONS / 兼底，路径匹上、方法匹不上 → 报一个让人摸不着头脑的 405。
+	v = strings.TrimSuffix(v, "/v1")
 	return strings.TrimRight(v, "/"), nil
 }
 

@@ -12,7 +12,7 @@ import (
 const DefaultPageSize = 100
 
 // maxSyncPages 是单次同步的翻页上限，防止服务端游标异常时无限打转
-// —— 在 2M 带宽的源站上，一个失控循环就是事故。
+// —— 在带宽受限的源站上，一个失控循环就是事故。
 const maxSyncPages = 2000
 
 // Delta 拉取一页增量变更集。

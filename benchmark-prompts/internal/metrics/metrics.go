@@ -1,4 +1,4 @@
-// Package metrics 提供轻量内存指标与 2M 带宽看门狗。
+// Package metrics 提供轻量内存指标与带宽看门狗。
 //
 // 项目规模不需要 Prometheus：一个原子计数器 + 滑动速率采样即可满足
 // "接近带宽上限就降级低优先级端点" 这一硬约束（docs/deployment.md §6）。
