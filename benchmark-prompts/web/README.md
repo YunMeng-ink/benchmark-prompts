@@ -75,8 +75,8 @@ src/styles/global.css   样式（构建时由 Astro 内联进 HTML）
 
 ## 已知限制
 
-- 交互验证止步于「浏览器那份 `api.ts` 真打了源站 + CORS/压缩/错误分支全过」这一层，
-  没有真浏览器点按：本机 chrome-devtool MCP 起不了 Chrome。`scripts/smoke-web.sh`
-  里那 45 项覆盖的是数据链路与渲染产物，不是点击事件。
+- `make smoke-web` 覆盖数据链路、CORS、压缩与预渲染产物，**覆盖不到水合语义与
+  可访问性**（它不启动浏览器）。那两层靠真 Chrome 点按，已跑过一轮并抓出 3 个缺陷，
+  记录见 `docs/testing.md` §7。**改动岛组件或表单后必须再点一轮**，别只看门禁绿。
 - `runtime-config.js` 没有内容 hash，改了要靠 CDN 刷新或 `no-cache` 生效。
 - `.astro` 文件 biome 不支持，只有 `ts`/`tsx` 进 lint 门禁。

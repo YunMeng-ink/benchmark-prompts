@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 
 import { apiBase, apiKey, hasApiBase, setApiBase, setApiKey } from "../lib/api";
 
@@ -7,10 +7,40 @@ import { apiBase, apiKey, hasApiBase, setApiBase, setApiKey } from "../lib/api";
  * 不做前端 HMAC——源站 auth.go 的优先级是 Bearer > 签名，前端只带 Key。
  */
 export default function Credentials() {
-	const [base, setBase] = useState(apiBase());
-	const [key, setKey] = useState(apiKey());
+	const initialBase = apiBase();
+	const [base, setBase] = useState("");
+	const [key, setKey] = useState("");
 	const [saved, setSaved] = useState(false);
-	const open = !hasApiBase();
+	// 预渲染时读不到 localStorage（SSR 环境里没有），所以不能用它直接初始化 DOM 值：
+	// Preact 水合不会把 HTML 里的旧值补成客户端状态，导致刷新后地址框显示空白、
+	// 面板也不自动收起（真浏览器实测抓到）。挂载后再一次性同步。
+	const [mounted, setMounted] = useState(false);
+	const open = mounted ? !hasApiBase() : undefined;
+
+	useEffect(() => {
+		setBase(apiBase());
+		setKey(apiKey());
+		setMounted(true);
+	}, []);
+
+	// 存完必须让页面重取数据：各视图只在挂载时读过一次配置，不重载就会停在
+	// “请先填地址”的旧状态（真浏览器点按实测抓到的缺陷）。
+	const apply = () => {
+		setApiBase(base);
+		setApiKey(key);
+		if (apiBase() !== initialBase) globalThis.location?.reload();
+		else setSaved(true);
+	};
+
+	const clear = () => {
+		const had = initialBase !== "" || apiKey() !== "";
+		setApiBase("");
+		setApiKey("");
+		setBase("");
+		setKey("");
+		setSaved(false);
+		if (had) globalThis.location?.reload();
+	};
 
 	return (
 		<details class="creds" open={open}>
@@ -18,14 +48,14 @@ export default function Credentials() {
 			<form
 				onSubmit={(ev) => {
 					ev.preventDefault();
-					setApiBase(base);
-					setApiKey(key);
-					setSaved(true);
+					apply();
 				}}
 			>
 				<label class="block">
 					源站地址
 					<input
+						name="bench_api_base"
+						autocomplete="off"
 						value={base}
 						onInput={(e) => {
 							setSaved(false);
@@ -37,6 +67,8 @@ export default function Credentials() {
 				<label class="block">
 					API Key（可选；只浏览不需要）
 					<input
+						name="bench_api_key"
+						autocomplete="off"
 						type="password"
 						value={key}
 						onInput={(e) => {
@@ -48,17 +80,7 @@ export default function Credentials() {
 				</label>
 				<p class="row">
 					<button type="submit">保存</button>
-					<button
-						type="button"
-						class="ghost"
-						onClick={() => {
-							setApiBase("");
-							setApiKey("");
-							setBase("");
-							setKey("");
-							setSaved(false);
-						}}
-					>
+					<button type="button" class="ghost" onClick={clear}>
 						清除
 					</button>
 				</p>

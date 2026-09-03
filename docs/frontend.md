@@ -131,5 +131,5 @@ make smoke-web     # 45 项：真源站 + 真产物 + 直接跑浏览器那份 a
 | 真源站本地验证（列表/随机/详情/统计/打分/上传/错误分支） | ✅ M5 | `make smoke-web` 45/45，含直接 import `web/src/lib/api.ts` |
 | 产物纯静态与资产图完整 | ✅ M5 | `scripts/web-asset-graph.mjs` 沿 import 核对 5 个文件 |
 | CORS 白名单 / `Vary: Origin` / 陌生源拒绝 / gzip | ✅ M5 | 冒烟中以带 Origin 的 curl 断言 |
-| 真浏览器点按验证 | 🔶 未做 | 本机 chrome-devtool 起不了 Chrome；见 `web/README.md` 已知限制 |
+| 真浏览器点按验证 | ✅ 已跑 | Chrome 点完全流程，抓出 3 个脚本测不到的缺陷；记录见 `testing.md` §7 |
 | 上 CDN | ⬜ M6 | 按 `deployment.md` §7 执行 |

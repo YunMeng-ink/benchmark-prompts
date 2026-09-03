@@ -39,11 +39,16 @@ export default function UploadView() {
 			</p>
 			<label class="block">
 				提示词正文
-				<textarea rows={10} value={content} onInput={(e) => setContent(e.currentTarget.value)} />
+				<textarea name="upload_content" rows={10} value={content} onInput={(e) => setContent(e.currentTarget.value)} />
 			</label>
 			<label class="block">
 				标签（逗号分隔，最多 10 个）
-				<input value={tagsInput} onInput={(e) => setTagsInput(e.currentTarget.value)} placeholder="coding, reasoning" />
+				<input
+					name="upload_tags"
+					value={tagsInput}
+					onInput={(e) => setTagsInput(e.currentTarget.value)}
+					placeholder="coding, reasoning"
+				/>
 			</label>
 			<p class="row">
 				<button type="button" disabled={!canSubmit} onClick={submit}>

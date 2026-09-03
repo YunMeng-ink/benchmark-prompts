@@ -37,10 +37,20 @@ export default function RandomView() {
 				>
 					<label>
 						标签
-						<input value={tagInput} onInput={(e) => setTagInput(e.currentTarget.value)} placeholder="留空为全库" />
+						<input
+							name="random_tag"
+							value={tagInput}
+							onInput={(e) => setTagInput(e.currentTarget.value)}
+							placeholder="留空为全库"
+						/>
 					</label>
 					<label class="check">
-						<input type="checkbox" checked={exclude} onChange={(e) => setExclude(e.currentTarget.checked)} />
+						<input
+							name="exclude_recent"
+							type="checkbox"
+							checked={exclude}
+							onChange={(e) => setExclude(e.currentTarget.checked)}
+						/>
 						排除最近看过的
 					</label>
 					<button type="submit" disabled={loading}>

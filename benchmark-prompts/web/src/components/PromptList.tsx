@@ -58,7 +58,12 @@ export default function PromptList() {
 				>
 					<label>
 						标签
-						<input value={tagInput} onInput={(e) => setTagInput(e.currentTarget.value)} placeholder="如 coding" />
+						<input
+							name="filter_tag"
+							value={tagInput}
+							onInput={(e) => setTagInput(e.currentTarget.value)}
+							placeholder="如 coding"
+						/>
 					</label>
 					<button type="submit">筛选</button>
 					{tag !== "" && (
