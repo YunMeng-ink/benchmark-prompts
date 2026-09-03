@@ -6,6 +6,20 @@
 版本号来源：`VERSION` 文件；在有 git tag 的环境里由 `git describe --tags` 覆盖。
 `bench version` 与 `bench-server -version` 报告的即是这个值。
 
+## [未发布]
+
+### 修复
+
+- **`bench` CLI 不关闭 SQLite 缓存句柄** —— `clientFor` 的 7 个调用点均未 `Close()`。
+  对 Linux/macOS 用户不可见（进程退出时 OS 回收），但在 Windows 上未关的句柄会
+  阻塞临时目录删除，导致测试集偶发失败且**失败包在 `internal/cli` 与 `pkg/client`
+  之间漂移**，看上去像“随机不稳”。现在每个客户端都在命令返回时 `defer c.Close()`。
+  连跑 3 轮全量 `go test -race ./...` 稳定 14/14。
+
+> 说明：v0.1.0 已公开发布，**不移动已发布的 tag**（即使下载数为 0），
+> 以保持“已发布二进制里嵌入的 commit 号 ≡ tag 目标”这个不变量。
+> 本修复随下一版发布。
+
 ## v0.1.0 — 2026-09-03
 
 首个可发布版本。后端、CLI 与两个 Agent 框架适配全部完成并通过真实验证。

@@ -25,6 +25,9 @@ func (a *App) cmdMeta(ctx context.Context, g *globals) error {
 	if err != nil {
 		return err
 	}
+	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
+	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
+	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	st, err := c.CheckStatus(ctx)
@@ -47,6 +50,9 @@ func (a *App) cmdSync(ctx context.Context, g *globals) error {
 	if err != nil {
 		return err
 	}
+	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
+	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
+	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	rep, err := c.Sync(ctx)
@@ -97,6 +103,9 @@ func (a *App) cmdGet(ctx context.Context, g *globals, args []string) error {
 	if err != nil {
 		return err
 	}
+	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
+	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
+	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	p, err := c.Get(ctx, id)
@@ -112,6 +121,9 @@ func (a *App) cmdRandom(ctx context.Context, g *globals, _ []string) error {
 	if err != nil {
 		return err
 	}
+	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
+	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
+	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	exclude := splitCSV(g.exclude)
@@ -144,6 +156,9 @@ func (a *App) cmdList(ctx context.Context, g *globals) error {
 	if err != nil {
 		return err
 	}
+	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
+	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
+	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	limit := g.limit
@@ -199,6 +214,9 @@ func (a *App) cmdScore(ctx context.Context, g *globals, args []string) error {
 	if err != nil {
 		return err
 	}
+	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
+	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
+	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	res, err := c.Score(ctx, args[0], value)
@@ -235,6 +253,9 @@ func (a *App) cmdUpload(ctx context.Context, g *globals) error {
 	if err != nil {
 		return err
 	}
+	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
+	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
+	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	tags := splitCSV(g.tags)

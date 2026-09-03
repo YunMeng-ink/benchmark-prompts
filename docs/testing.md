@@ -189,10 +189,16 @@ make contract         # 重新采集 bench --json 地面数据
     `grep TOOL-OK` 判失败、再查错误标记。模型完全正确地拒绝了（“因此不能回答 TOOL-OK”），
     却因引用了探针词而被判为“把错误当成成功”。**插件无错，测试错了**。
     改为**先查错误标记、再查探针词**（仍保留诊断力：真发生了“错误被吞”，
-    模型手里就没有错误文本可引）。本方法论缺陷已同步影响 pi 侧新增的同类断言。
-
-另记一类**测试设计缺陷**（不是代码 bug，但同属“测了却什么都没验证”）：
-早期适配验证只要求“输出里出现唯一标记”，而模型完全可以自己跑 `bench` 拿到它
+    模型手里就没有错误文本可引）。同类断言已同步补进 pi 侧。
+11. **CLI 不关 SQLite 缓存句柄**（发布阶段才抖出）—— 只在 Windows 上表现为
+    `t.TempDir` 清理失败，Linux/macOS 完全看不出来。已给 7 个 `clientFor`
+    调用点补 `defer c.Close()`。
+12. **`go version -m` 读不到 `-ldflags`** —— 原计划用 build info 验证跨平台产物的
+    版本注入，实测 go1.27 只记 `-buildmode`/`-compiler`/`-trimpath`。改用构建时间戳
+    做字节级证据，并对照实验证明该检查有诊断力。
+13. **`pipefail` + `grep -q` 的 SIGPIPE 陷阱** —— `tar -tzf | grep -q` 里 grep 提前关
+    管道会让 tar 收到 EPIPE，整条管线返回 141，**归档内容完全正确也会被判失败**。
+    同类判断改成“先取进变量再模式匹配”。
 ——DSH 侧第一轮实测就拓到了这条路。修正：测试环境必须消除旁路
 （DSH：patch 里 `disabled: true`；pi：`--tools` 白名单）。
 
@@ -208,5 +214,12 @@ make contract         # 重新采集 bench --json 地面数据
 - **两份 `bench-core.ts` 是副本关系**（pi 与 dsh 各一份，因装载机制不同无法共享）。
   漂移风险由 **sha256 哈希钉测试** 把守（两测试文件各钉一份，改动必须双向同步
   后一起更新钉值），不依赖仓库布局。这是当前防止两框架行为分叉的唯一机制。
-- 曾观察到一次 `-race` 下只数到 12/13 包（当时 13 包）；复跑两次均为 13/13 且无 FAIL，
-  疑为 httptest 随机端口偶发争用，未复现也未根除。
+- 曾观察到一次 `-race` 下只数到 12/13 包，当时**猜**是 httptest 随机端口偶发争用。
+  那个猜测是错的。后续在发布阶段重新复现并拿到了真实原因：
+  `--- FAIL: TestRandomFreshOnlyExcludesRecentlyDrawn` 本身通过，
+  挂在 `t.TempDir` 的清理上 —— `unlinkat …: The directory is not empty`。
+  **根因是 CLI 创建了带 SQLite 缓存的 client 却从不 `Close()`**：Windows 不允许
+  删除仍被句柄占用的文件，于是清理失败；失败包会在 `internal/cli` 与 `pkg/client`
+  之间飘，单独跑又总过 —— 典型的资源泄漏伪装成“随机不稳”。
+  已修：`clientFor` 的 7 个调用点均 `defer c.Close()`，连跑 3 轮全量 `-race` 稳定 14/14。
+  教训：**“复现不了就先记一笔偶然”会把真 bug 合理化为噪声**，下次要带工具多跑几轮。
