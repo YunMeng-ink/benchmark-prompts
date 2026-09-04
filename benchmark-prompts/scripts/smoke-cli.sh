@@ -148,6 +148,51 @@ errjson="$($BENCH score "$UPID" 9 --home "$HOME_DIR" --json 2>/dev/null)"
 printf '%s' "$errjson" | grep -q '"ok":false' && printf '%s' "$errjson" | grep -q '"code"' \
   && ok "错误 JSON 含 ok:false 与 code，插件可分支" || bad "错误 JSON 不符" "$errjson"
 
+# ---------- 自助注册 Key ----------
+desc "CLI: 邀请码自助注册 / 查看 / 吊销"
+INV="$($SRVB -config "$CFG" -gen-invite "冒烟:2" 2>/dev/null | sed -n 's/邀请码：\([A-Z0-9-]*\).*/\1/p' | head -1)"
+[ -n "$INV" ] && ok "-gen-invite 签发邀请码" || bad "邀请码签发失败" ""
+
+# 先清掉运维 Key，模拟"新用户只有地址、没有凭据"
+b config set api_key "" >/dev/null 2>&1
+out="$(b key new --invite="$INV" --label=冒烟机 --json 2>&1)"; code=$?
+KEY1="$(printf '%s' "$out" | jget key)"
+[ $code -eq 0 ] && [ -n "$KEY1" ] && ok "key new 拿到自助 Key" || bad "key new 失败" "code=$code $out"
+printf '%s' "$out" | grep -q '"scope":"writer"' && ok "自助 Key 作用域是 writer" || bad "作用域不对" "$out"
+b config show --json 2>/dev/null | grep -q '"has_key":true'   && ok "Key 已自动写入配置（无需再手工 config set）" || bad "未写入配置" ""
+
+out="$(b key self --json 2>&1)"
+printf '%s' "$out" | grep -q '"scope":"writer"' && ok "key self 报告元信息" || bad "self 异常" "$out"
+printf '%s' "$out" | grep -q "$KEY1" && bad "self 回显了明文 Key" || ok "self 不回显明文 Key"
+
+# 安全回归：自助签发的 writer Key 不能读运维端点；运维 Key 仍可
+code="$($CURL -s -o /dev/null -w '%{http_code}' "$BASE/-/metrics" -H "Authorization: Bearer $KEY1")"
+[ "$code" = "403" ] && ok "writer Key 读 /-/metrics 被拒 403" || bad "应 403" "got $code"
+code="$($CURL -s -o /dev/null -w '%{http_code}' "$BASE/-/metrics" -H "Authorization: Bearer cli-key")"
+[ "$code" = "200" ] && ok "admin Key 读 /-/metrics 仍 200" || bad "应 200" "got $code"
+
+# 换一台"设备"（第二个 HOME → 另一个 device_id）才能验到邀请码本身：
+# 服务端先查设备唯一性，所以已注册的设备即使码是假的也会先拿到 409。
+b2() { $BENCH "$@" --home "$WORK/home2"; }
+b2 config init --endpoint "$BASE" >/dev/null 2>&1
+out="$(b2 key new --invite=BOGUS-CODE --json 2>&1)"; code=$?
+[ $code -eq 3 ] && printf '%s' "$out" | grep -q '"code":"forbidden"'   && ok "无效邀请码 → forbidden/退出码 3" || bad "应 forbidden+3" "code=$code $out"
+
+# 同设备重复注册：409 conflict（退出码 5）
+out="$(b key new --invite="$INV" --json 2>&1)"; code=$?
+[ $code -eq 5 ] && printf '%s' "$out" | grep -q '"code":"conflict"'   && ok "同设备重复注册 → conflict/退出码 5" || bad "应 conflict+5" "code=$code $out"
+
+# 吊销后：配置清空、写入被拒
+out="$(b key revoke --json 2>&1)"; code=$?
+[ $code -eq 0 ] && printf '%s' "$out" | grep -q '"revoked":true' && ok "key revoke 成功" || bad "revoke 异常" "$out"
+b config show --json 2>/dev/null | grep -q '"has_key":false' && ok "吊销后自动清除配置里的 Key" || bad "配置未清" ""
+out="$(b score "$UPID" 3 --json 2>&1)"; code=$?
+[ $code -eq 3 ] && printf '%s' "$out" | grep -q '"code":"unauthorized"' && ok "吊销后写入被拒 401" || bad "应 unauthorized" "code=$code $out"
+
+# 名额未用尽时同一码还能再签一把（max_uses=2，已用 1）——必须是另一台设备
+out="$(b2 key new --invite="$INV" --json 2>&1)"; code=$?
+[ $code -eq 0 ] && ok "码在剩余名额内可再签发给另一台设备" || bad "第二次签发失败" "$out"
+
 desc "CLI: 离线与缓存清理"
 kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; SRV=""
 out="$($BENCH get "$UPID" --local --home "$HOME_DIR" 2>/dev/null)"; code=$?

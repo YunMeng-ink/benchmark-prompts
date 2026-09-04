@@ -106,10 +106,12 @@ func Default() *Config {
 		RateLimit: RateLimit{
 			Window: Duration(60 * time.Second),
 			// 与 docs/api.md §6 的配额表一致
-			Anonymous: map[string]int{"meta": 10, "list": 60, "random": 60, "get": 60, "delta": 5},
+			// keys 必须显式配置：限流器的语义是「未配置即不限流」，
+			// 而自助注册正是最需要压住频率的入口。
+			Anonymous: map[string]int{"meta": 10, "list": 60, "random": 60, "get": 60, "delta": 5, "keys": 5},
 			Authed: map[string]int{
 				"meta": 60, "list": 300, "random": 300, "get": 300,
-				"delta": 30, "scores": 30, "upload": 10,
+				"delta": 30, "scores": 30, "upload": 10, "keys": 30,
 			},
 		},
 		Bandwidth: Bandwidth{

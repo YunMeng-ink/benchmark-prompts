@@ -41,9 +41,27 @@ CREATE TABLE scores (
 CREATE TABLE api_keys (
   key_hash    TEXT PRIMARY KEY,           -- sha256(key) 存储，不存明文（用于查找）
   secret_enc  TEXT NOT NULL,              -- HMAC secret：AES-GCM 加密存储（密钥来自环境变量），校验时解密做签名比对
-  name        TEXT NOT NULL,
+                                          -- 自助注册的 Key 没有 secret，存空串（只有 Bearer 一条路）
+  name        TEXT NOT NULL,              -- 身份名：运维签发用 label，自助签发用 self:<哈希前8>[:备注]
   enabled     INTEGER NOT NULL DEFAULT 1,
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  scope       TEXT NOT NULL DEFAULT 'writer',  -- writer 可打分/上传；admin 额外可读 /-/metrics
+  device_id   TEXT,                       -- 自助注册绑定的设备；运维签发为 NULL
+  invite_id   INTEGER                     -- 消耗掉的邀请码 id，便于审计
+);
+
+-- 一设备一 Key（部分唯一索引：只约束自助注册的行，运维签发的 NULL 不参与）
+CREATE UNIQUE INDEX ux_keys_device ON api_keys(device_id) WHERE device_id IS NOT NULL;
+
+CREATE TABLE invite_codes (                -- 0002 迁移：自助注册的准入凭据
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code_hash  TEXT NOT NULL UNIQUE,        -- 只存 sha256，与 api_keys.key_hash 同一策略
+  label      TEXT NOT NULL,               -- 用途备注，如 "群发-2026-09"
+  max_uses   INTEGER NOT NULL DEFAULT 1,  -- 一个码能换几把 Key
+  used       INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER,                     -- NULL = 不过期（Unix 秒）
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
 );
 
 CREATE TABLE uploads (

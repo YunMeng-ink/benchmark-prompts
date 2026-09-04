@@ -125,6 +125,20 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 1. **最小权限**：服务以专用 `bench` 用户运行，`NoNewPrivileges`、`ProtectSystem=strict`。
 2. **只开 443**：防火墙仅放行 443；`/ -/metrics` 仅内网/管理 Key。
 3. **密钥管理**：API key 存 `sha256`；HMAC `secret` 加密存储；生产用环境变量注入。
+   凭据发放走邀请码，运维者**不需要**再逐条 `-put-key`：
+
+   ```bash
+   # 主密钥必须在（签发 Key/邀请码都要加密能力）
+   export BENCH_SECRET_KEY=<随机 64 hex>
+   bench-server -config c.yaml -gen-invite "群发:20:30"   # label:次数:有效天数
+   bench-server -config c.yaml -list-invites              # 看谁用了几个
+   bench-server -config c.yaml -list-keys                 # 只给哈希前缀，明文不可恢复
+   bench-server -config c.yaml -revoke-key cb4f408e3095   # 出问题时按句柄吊销
+   ```
+
+   自助注册的 Key 一律是 `writer`：能打分/上传，**读不到 `/-/metrics`**。
+   需要管理能力的 Key 只能由运维者 `-put-key` 签发（scope=admin）。
+   邀请码与 Key 的明文都只在签发那一刻出现一次，丢失只能重发。
 4. **TLS**：强制 HTTPS，HSTS 头。
 5. **限流**：见 `server.md` §4 + 分级配额（`api.md` §6）。
 6. **输入消毒**：正文、标签、ID 全量校验，防 SQL 注入（用参数化查询）、防 XSS（前端转义）。

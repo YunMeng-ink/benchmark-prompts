@@ -121,13 +121,13 @@ node --import ./scripts/dsh-module-hook.mjs --test plugins/dsh/plugin.test.ts   
 
 ```bash
 make smoke            # 47 项，服务端真实 HTTP + 真实 SQLite
-make smoke-cli        # 35 项，真实 bench 二进制
+make smoke-cli        # 49 项，真实 bench 二进制
 make typecheck-dsh     # tsc noEmit 对 DSH 真实 .d.ts
 make release           # 全平台交叉编译 + 打包 + sha256sums + RELEASE-INFO
 make release-verify    # 验证发布产物
 make smoke-pi         # 12 项，真实 pi + 真实 LLM（无凭据则 SKIP）
 make smoke-dsh        # 19 项，真 DSH headless + 真 LLM（无安装树则 SKIP）
-make smoke-web        # 45 项，前端真源站 + 真产物 + 浏览器那份 api.ts
+make smoke-web        # 58 项，前端真源站 + 真产物 + 浏览器那份 api.ts
 make contract         # 重新采集 bench --json 地面数据
 ```
 
@@ -139,7 +139,7 @@ make contract         # 重新采集 bench --json 地面数据
 
 ## 9. 验收标准（MVP 就绪定义）
 
-- [x] 8 个端点全部按 `api.md` 契约通过
+- [x] 11 个端点全部按 `api.md` 契约通过
 - [x] gzip + ETag/304 + delta 增量生效
 - [x] 限流 + 带宽看门狗生效
 - [x] 备份 + 审核运维链路就绪
@@ -162,7 +162,7 @@ make contract         # 重新采集 bench --json 地面数据
 | TS 单测 | `make test-ts`（node --test） | ✅ **63 项**：Pi 侧 33（含 3 项真实 bench 集成、2 项 skill 结构校验）+ dsh bench-core 7（含哈希钉）+ **dsh 插件层 23**（假 ctx + 真 `defineTool`） |
 | DSH 类型检查 | `make typecheck-dsh` | ✅ `tsc noEmit` 对着 DSH 真实 `.d.ts`（DSH 包附 `src/`，可类型检查 —— pi 入口做不到） |
 | 服务端端到端 | `bash scripts/smoke.sh` | ✅ **47/47** |
-| CLI 二进制端到端 | `bash scripts/smoke-cli.sh` | ✅ **35/35** |
+| CLI 二进制端到端 | `bash scripts/smoke-cli.sh` | ✅ **49/49** |
 | Pi 扩展真实验证 | `bash scripts/smoke-pi.sh` | ✅ **12/12**（真实 pi 加载 + 真实 LLM 调用工具 + 失败分支） |
 | DSH 插件真实验证 | `bash scripts/smoke-dsh.sh` | ✅ **19/19**（headless 真装载 + 真 LLM + HMAC 写路径 + 四类失败分支 + skill 发现） |
 | 发布产物验证 | `make release && make release-verify` | ✅ **20 通过 / 0 失败 / 1 诚实 SKIP**（Windows 不在 server 矩阵） |
@@ -213,9 +213,12 @@ make contract         # 重新采集 bench --json 地面数据
     却因引用了探针词而被判为“把错误当成成功”。**插件无错，测试错了**。
     改为**先查错误标记、再查探针词**（仍保留诊断力：真发生了“错误被吞”，
     模型手里就没有错误文本可引）。同类断言已同步补进 Pi 侧。
-11. **CLI 不关 SQLite 缓存句柄**（发布阶段才抓出）—— 只在 Windows 上表现为
-    `t.TempDir` 清理失败，Linux/macOS 完全看不出来。已给 7 个 `clientFor`
-    调用点补 `defer c.Close()`。
+11. **一次错误归因（本节自身的缺陷）** —— Windows 上 `t.TempDir` 清理失败
+    （`unlinkat …: The directory is not empty`）曾被归因于“`clientFor` 的 7 个
+    调用点从不 `Close()`”，并据此补了 7 行 `defer`。复查提交历史证明**该结论是错的**：
+    那 7 处原本就有 `defer c.Close()`，测试侧的缓存与客户端也都已关闭。
+    冗余的 7 行已删除。**真实原因至今未定位**，当前 5 轮 `-race` 不复现；
+    再出现时应先取证据（失败的测试名、清理时目录残留项），不要先猜原因再改代码。
 12. **`go version -m` 读不到 `-ldflags`** —— 原计划用 build info 验证跨平台产物的
     版本注入，实测 go1.27 只记 `-buildmode`/`-compiler`/`-trimpath`。改用构建时间戳
     做字节级证据，并对照实验证明该检查有诊断力。
@@ -249,12 +252,14 @@ make contract         # 重新采集 bench --json 地面数据
 - **两份 `bench-core.ts` 是副本关系**（pi 与 dsh 各一份，因装载机制不同无法共享）。
   漂移风险由 **sha256 哈希钉测试** 把守（两测试文件各钉一份，改动必须双向同步
   后一起更新钉值），不依赖仓库布局。这是当前防止两框架行为分叉的唯一机制。
-- 曾观察到一次 `-race` 下只数到 12/13 包，当时**猜**是 httptest 随机端口偶发争用。
-  那个猜测是错的。后续在发布阶段重新复现并拿到了真实原因：
+- 曾观察到一次 `-race` 下只数到 12/13 包，当时**猜**是 httptest 随机端口偶发争用；
+  后来换成“CLI 不关 SQLite 句柄”这个解释，**那个解释同样是猜的**（见缺陷 11）。
+  真实原因至今未定位。原始报错如下，留作下次取证的起点：
   `--- FAIL: TestRandomFreshOnlyExcludesRecentlyDrawn` 本身通过，
   挂在 `t.TempDir` 的清理上 —— `unlinkat …: The directory is not empty`。
   **根因是 CLI 创建了带 SQLite 缓存的 client 却从不 `Close()`**：Windows 不允许
   删除仍被句柄占用的文件，于是清理失败；失败包会在 `internal/cli` 与 `pkg/client`
   之间飘，单独跑又总过 —— 典型的资源泄漏伪装成“随机不稳”。
-  已修：`clientFor` 的 7 个调用点均 `defer c.Close()`，连跑 3 轮全量 `-race` 稳定 14/14。
-  **结论：“复现不了就先记一笔偶然”会把真 bug 合理化为噪声** —— 偶发失败必须多轮复跑定位，不能归因于环境。
+  当前 5 轮全量 `-race` 稳定 14/14，但**不能据此宣布已修**。
+  **结论：“复现不了就先记一笔偶然”会把真 bug 合理化为噪声**；反过来，
+  “拿到一个听起来合理的解释就写进文档”会把猜测固化成事实 —— 两者都要防。

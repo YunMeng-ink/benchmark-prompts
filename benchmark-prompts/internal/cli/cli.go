@@ -67,6 +67,10 @@ type globals struct {
 	all     bool
 	fresh   bool
 
+	// key new
+	invite string
+	label  string
+
 	// upload
 	content  string
 	file     string
@@ -92,6 +96,9 @@ func (g *globals) register(fs *flag.FlagSet) {
 	fs.BoolVar(&g.all, "all", false, "自动翻页直到结束")
 	fs.BoolVar(&g.fresh, "fresh", false, "random 排除最近已抽过的条目（而不是全部缓存）")
 
+	fs.StringVar(&g.invite, "invite", "", "key new 用的邀请码")
+	fs.StringVar(&g.label, "label", "", "key new 给这台设备起的备注名")
+
 	fs.StringVar(&g.content, "c", "", "upload 的提示词正文")
 	fs.StringVar(&g.content, "content", "", "upload 的提示词正文")
 	fs.StringVar(&g.file, "f", "", "upload 从一个文件读正文")
@@ -116,6 +123,7 @@ const usageText = `bench —— 个人测试用 benchmark 提示词客户端
   list [--tag=] [--limit=]    浏览目录摘要（不含正文，省带宽）
   score <id> <1-5>            为提示词打分
   upload (-c 文本 | -f 文件)  上传新提示词，进入审核队列
+  key new|self|revoke         邀请码自助注册 Key / 查看 / 吊销自己这把
   config init|show|set        管理本地配置
   reset                       清空本地缓存（保留 device_id）
   version                     显示版本
@@ -188,6 +196,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		err = a.cmdScore(ctx, g, rest)
 	case "upload":
 		err = a.cmdUpload(ctx, g)
+	case "key":
+		err = a.cmdKey(ctx, g, rest)
 	case "config":
 		err = a.cmdConfig(ctx, g, rest)
 	case "reset":

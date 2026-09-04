@@ -88,7 +88,14 @@ func (s *Server) Routes() http.Handler {
 
 	// 运维端点
 	mux.HandleFunc("GET /-/healthz", s.handleHealthz)
-	mux.HandleFunc("GET /-/metrics", s.writeRoute("metrics", s.handleMetrics))
+	// 自助注册：匿名可调，但走独立的低配额桶（keys）。
+	// 明文 Key 只在这一次响应里出现，事后不可恢复 —— 没有“找回”这条路。
+	mux.HandleFunc("POST /v1/keys", s.bodyMW(s.route("keys", s.handleKeyRegister)))
+	mux.HandleFunc("GET /v1/keys/self", s.writeRoute("keys", s.handleKeySelf))
+	mux.HandleFunc("DELETE /v1/keys/self", s.writeRoute("keys", s.handleKeyRevokeSelf))
+
+	// 运维端点：必须是 admin 作用域。自助注册的 writer Key 一律 403。
+	mux.HandleFunc("GET /-/metrics", s.adminRoute("metrics", s.handleMetrics))
 	mux.HandleFunc("OPTIONS /", s.handlePreflight)
 
 	// 由内向外依次包装（最外层最后赋值）。
@@ -108,7 +115,12 @@ func (s *Server) route(endpoint string, h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) writeRoute(endpoint string, h http.HandlerFunc) http.HandlerFunc {
-	return s.authMW(s.limitMW(endpoint, h))
+	return s.bodyMW(s.authMW(s.limitMW(endpoint, h)))
+}
+
+// adminRoute 只允许 admin 作用域的 Key（运维端点）。
+func (s *Server) adminRoute(endpoint string, h http.HandlerFunc) http.HandlerFunc {
+	return s.bodyMW(s.authMW(s.adminMW(s.limitMW(endpoint, h))))
 }
 
 // applyCORS 只在白名单命中时回写 CORS 头。

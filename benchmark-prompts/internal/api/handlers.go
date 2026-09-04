@@ -350,3 +350,104 @@ func splitList(s string, max int) []string {
 }
 
 func promptCacheKey(id string) string { return "prompt:" + id }
+
+// ---- 自助注册 Key（docs/api.md §3.9、§3.10）----
+
+// maxDeviceIDLen 与 model 里的 deviceId 约束保持同一量级。
+const maxDeviceIDLen = 64
+
+// handleKeyRegister 实现 POST /v1/keys：用邀请码换一把绑定设备的 writer Key。
+//
+// 匿名可调（因此单独走很低的限流桶）。明文 Key 只在这次响应里出现，
+// 库里只存 sha256 —— 丢了只能重新申请，没有"找回"这条路。
+func (s *Server) handleKeyRegister(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		InviteCode string `json:"inviteCode"`
+		DeviceID   string `json:"deviceId"`
+		Label      string `json:"label"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		s.renderErr(w, err)
+		return
+	}
+	req.InviteCode = strings.TrimSpace(req.InviteCode)
+	req.DeviceID = strings.TrimSpace(req.DeviceID)
+	switch {
+	case req.InviteCode == "":
+		s.renderErr(w, ErrValidation.WithMessage("inviteCode 不能为空"))
+		return
+	case req.DeviceID == "":
+		s.renderErr(w, ErrValidation.WithMessage("deviceId 不能为空"))
+		return
+	case len(req.DeviceID) > maxDeviceIDLen:
+		s.renderErr(w, ErrValidation.WithMessage("deviceId 过长（上限 %d 字符）", maxDeviceIDLen))
+		return
+	case len(req.Label) > 40:
+		s.renderErr(w, ErrValidation.WithMessage("label 过长（上限 40 字符）"))
+		return
+	}
+
+	info, plain, err := s.st.RegisterSelfKey(r.Context(), req.InviteCode, req.DeviceID, req.Label)
+	switch {
+	case errors.Is(err, store.ErrInviteInvalid):
+		// 不存在 / 停用 / 过期 / 用尽一律同一结果：不给出可区分的信号，
+		// 否则这个端点就变成邀请码存在性探针。
+		s.renderErr(w, ErrForbidden.WithMessage("邀请码无效、已停用、已过期或用尽"))
+		return
+	case errors.Is(err, store.ErrDeviceTaken):
+		s.renderErr(w, ErrConflict.WithMessage("该设备已领过 Key；如需重发请先由运维吊销"))
+		return
+	case err != nil:
+		s.renderErr(w, err)
+		return
+	}
+
+	s.metrics.KeysIssued.Add(1)
+	w.Header().Set("Cache-Control", "no-store")
+	s.renderOK(w, http.StatusCreated, map[string]any{
+		"key":      plain, // 只返回一次
+		"ref":      info.Ref,
+		"name":     info.Name,
+		"scope":    info.Scope,
+		"deviceId": info.DeviceID,
+	}, nil)
+}
+
+// handleKeySelf 实现 GET /v1/keys/self：查看自己这把 Key 的元信息。
+// 不返回明文 Key（本来就不可恢复），也不返回别人的 Key。
+func (s *Server) handleKeySelf(w http.ResponseWriter, r *http.Request) {
+	id := identity(r)
+	info, err := s.st.SelfKey(r.Context(), id.KeyHash)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.renderErr(w, ErrNotFound.WithMessage("该 Key 已不存在"))
+		return
+	case err != nil:
+		s.renderErr(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.renderOK(w, http.StatusOK, map[string]any{
+		"ref":        info.Ref,
+		"name":       info.Name,
+		"scope":      info.Scope,
+		"deviceId":   info.DeviceID,
+		"enabled":    info.Enabled,
+		"created_at": info.CreatedAt,
+	}, nil)
+}
+
+// handleKeyRevokeSelf 实现 DELETE /v1/keys/self：停用（吊销）自己这把 Key。
+// 之后再用它请求会得到 401，且不可撤销——需要重新拿邀请码。
+func (s *Server) handleKeyRevokeSelf(w http.ResponseWriter, r *http.Request) {
+	id := identity(r)
+	if err := s.st.DisableAPIKey(r.Context(), id.KeyHash); err != nil {
+		s.renderErr(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.renderOK(w, http.StatusOK, map[string]any{
+		"ref":     id.KeyHash[:12],
+		"revoked": true,
+	}, nil)
+}

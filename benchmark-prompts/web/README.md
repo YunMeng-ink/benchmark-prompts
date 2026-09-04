@@ -54,6 +54,18 @@ src/lib/router.ts       hash 路由（#/ #/random #/detail/{id} #/upload）
 src/styles/global.css   样式（构建时由 Astro 内联进 HTML）
 ```
 
+## 怎么拿到 API Key
+
+只浏览不需要 Key。要打分/上传时：向源站维护者要一个**邀请码**
+（`bench-server -gen-invite "标签:次数:天数"` 签发），在「连接设置」里填码点
+「申请 Key」即可——服务端随机生成、只回显一次，并自动填进本浏览器的 Key 字段。
+
+- 一台设备一把：同一浏览器重复申请返回 `conflict`，不会发第二把。
+- 丢了找不回（服务端只存哈希），只能再要一个码。
+- 自助拿到的 Key 作用域是 `writer`：能打分/上传，**读不到运维端点**。
+- 命令行等价物：`bench key new --invite=<码>`（会自动写进 bench 配置）。
+- 作废：页面上的「作废当前 Key」按钮，或 `bench key revoke`。
+
 ## 安全边界
 
 - **前端不持有 HMAC secret**。写入用 `Authorization: Bearer <key>`；源站 `auth.go`
@@ -67,8 +79,8 @@ src/styles/global.css   样式（构建时由 Astro 内联进 HTML）
 不设硬预算（`docs/frontend.md` §4.1），但每次构建必须报告，防止无声增长：
 
 ```
-首屏必经（index.html + 全部 JS，gzip）  ≈ 19.7 KB
-其中 JS（Preact 岛运行时 + 应用代码）    ≈ 15.1 KB
+首屏必经（index.html + 全部 JS，gzip）  ≈ 20.6 KB
+其中 JS（Preact 岛运行时 + 应用代码）    ≈ 15.7 KB
 ```
 
 `make web-build` / `make smoke-web` 每次都会重新打印真实数字。

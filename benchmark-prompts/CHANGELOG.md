@@ -10,6 +10,23 @@
 
 ### 新增
 
+- **凭据自助注册（邀请码 + 设备绑定）**：使用者不再需要运维者手工 `-put-key`。
+  - 运维侧：`-gen-invite "标签:次数:有效天数"` 签发邀请码（只存 sha256，明文只打印一次）、
+    `-list-invites`、`-list-keys`、`-revoke-key <哈希前缀|name>`。
+  - 服务端：`POST /v1/keys` 换 Key（一设备一 Key，重复申请 `409 conflict`；
+    无效/停用/过期/用尽一律 `403 forbidden`，避免变成邀请码探针）、
+    `GET /v1/keys/self`、`DELETE /v1/keys/self`（作废不可撤销）。
+  - 客户端：`bench key new|self|revoke`（自动写入 bench 配置）、前端「连接设置」
+    里的「申请 Key / 作废当前 Key」。
+  - 校验顺序是**先验码、再查设备**：反序会让"码打错了"的用户收到
+    "该设备已领过 Key"这种误导性回答；设备冲突时不消费名额。
+- **Key 作用域（scope）**：`api_keys` 新增 `scope`/`device_id`/`invite_id`（迁移 0002）。
+  自助注册的 Key 永远是 `writer`；`-put-key` 签发的是 `admin`。
+  `/-/metrics` 改为 `adminRoute`——在此之前它只要求"有任意有效 Key"，
+  **自助注册一上线就会变成公开可读**，这是本次改动必须同时做的安全收口。
+  迁移里显式 `UPDATE ... SET scope='admin' WHERE device_id IS NULL`，
+  否则列默认值会把既有运维 Key 静默降级（有专门的升级测试钉住）。
+
 - **前端站点 `web/`（M5）**：Astro 纯静态输出 + Preact 岛，四个 hash 路由
   （列表 / 随机 / 详情 / 上传）+ 打分区 + 连接设置。产物整目录上 CDN、零回源；
   构建时报告真实体积（当前首屏 19.7 KB gzip）。用法见 `web/README.md`。
@@ -46,11 +63,15 @@
   "Method Not Allowed" 而不是契约信封，CLI 只能报 `bad_response`。
   现在两端一致：Go 的 `NormalizeEndpoint` 与前端 `normalizeBase()` 都会归一到源站根。
   这个坑的触发概率不低——`docs/api.md` §1 的 Base URL 示例就是带 `/v1` 的写法。
-- **`bench` CLI 不关闭 SQLite 缓存句柄** —— `clientFor` 的 7 个调用点均未 `Close()`。
-  对 Linux/macOS 用户不可见（进程退出时 OS 回收），但在 Windows 上未关的句柄会
-  阻塞临时目录删除，导致测试集偶发失败且**失败包在 `internal/cli` 与 `pkg/client`
-  之间漂移**，看上去像“随机不稳”。现在每个客户端都在命令返回时 `defer c.Close()`。
-  连跑 3 轮全量 `go test -race ./...` 稳定 14/14。
+- **撤回一条错误的“修复”**：上一版把 Windows 上 `t.TempDir` 清理失败
+  （`unlinkat …: The directory is not empty`）归因于“`clientFor` 的 7 个调用点
+  从不 `Close()`”，并据此加了 7 行 `defer func() { _ = c.Close() }()`。
+  复查提交历史发现那 7 处**本来就有** `defer c.Close()`，新加的是重复调用，
+  对症状没有任何作用；本轮已删除这 7 行冗余。
+  **该抖动的真实原因至今未定位**——测试侧的缓存与客户端也都已 `Close()`，
+  且当前连跑 5 轮 `go test -race ./...` 稳定 14/14 不复现。
+  下次再出现时的正确做法是先取证（哪个测试、清理时目录里还剩什么文件），
+  而不是先猜一个原因再改代码。
 
 > 说明：v0.1.0 已公开发布，**不移动已发布的 tag**（即使下载数为 0），
 > 以保持“已发布二进制里嵌入的 commit 号 ≡ tag 目标”这个不变量。

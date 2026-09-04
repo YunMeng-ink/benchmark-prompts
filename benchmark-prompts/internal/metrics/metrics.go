@@ -19,6 +19,8 @@ type Registry struct {
 	Hits304   atomic.Int64
 	Limited   atomic.Int64
 	Errors5xx atomic.Int64
+	// KeysIssued 统计自助注册成功签发的 Key 数（运维 -put-key 不计入）。
+	KeysIssued atomic.Int64
 
 	mu        sync.RWMutex
 	egressBps float64
@@ -56,6 +58,7 @@ func (r *Registry) Snapshot() map[string]any {
 		"hits_304":           r.Hits304.Load(),
 		"rate_limited":       r.Limited.Load(),
 		"errors_5xx":         r.Errors5xx.Load(),
+		"keys_issued":        r.KeysIssued.Load(),
 	}
 }
 

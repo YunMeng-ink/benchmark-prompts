@@ -622,7 +622,15 @@ type APIKeyRecord struct {
 	Name      string
 	SecretEnc string
 	Enabled   bool
+	Scope     string // ScopeWriter / ScopeAdmin
+	DeviceID  string // 自助注册的 Key 绑定设备；运维签发为空
 }
+
+// Key 作用域。writer 可打分与上传；admin 额外可访问运维端点（/-/metrics）。
+const (
+	ScopeWriter = "writer"
+	ScopeAdmin  = "admin"
+)
 
 // LookupAPIKey 按 key 的 sha256 查找。
 func (s *Store) LookupAPIKey(ctx context.Context, keyHash string) (*APIKeyRecord, error) {
@@ -630,16 +638,23 @@ func (s *Store) LookupAPIKey(ctx context.Context, keyHash string) (*APIKeyRecord
 		name, secretEnc string
 		enabled         int
 	)
+	var scope, deviceID sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		"SELECT name, secret_enc, enabled FROM api_keys WHERE key_hash=?", keyHash).
-		Scan(&name, &secretEnc, &enabled)
+		"SELECT name, secret_enc, enabled, scope, device_id FROM api_keys WHERE key_hash=?", keyHash).
+		Scan(&name, &secretEnc, &enabled, &scope, &deviceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("查询 API Key 失败: %w", err)
 	}
-	return &APIKeyRecord{Name: name, SecretEnc: secretEnc, Enabled: enabled != 0}, nil
+	return &APIKeyRecord{
+		Name:      name,
+		SecretEnc: secretEnc,
+		Enabled:   enabled != 0,
+		Scope:     scope.String,
+		DeviceID:  deviceID.String,
+	}, nil
 }
 
 // KeyHash 计算 api key 的查找哈希。
@@ -654,12 +669,13 @@ func (s *Store) PutAPIKey(ctx context.Context, plainKey, name, plainSecret strin
 	if err != nil {
 		return fmt.Errorf("加密 secret 失败: %w", err)
 	}
+	// -put-key 是运维动作，签出的 Key 带管理能力；自助注册的走 RegisterSelfKey（writer）。
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO api_keys(key_hash, secret_enc, name, enabled, created_at)
-		 VALUES(?,?,?,?,1)
+		`INSERT INTO api_keys(key_hash, secret_enc, name, enabled, created_at, scope)
+		 VALUES(?,?,?,?,1,?)
 		 ON CONFLICT(key_hash) DO UPDATE SET secret_enc=excluded.secret_enc,
-		   name=excluded.name, enabled=1`,
-		KeyHash(plainKey), enc, name, time.Now().Unix())
+		   name=excluded.name, enabled=1, scope=excluded.scope`,
+		KeyHash(plainKey), enc, name, time.Now().Unix(), ScopeAdmin)
 	if err != nil {
 		return fmt.Errorf("写入 API Key 失败: %w", err)
 	}
@@ -671,4 +687,290 @@ func placeholders(n int) string {
 		return ""
 	}
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// ---- 自助注册：邀请码与 Key 签发（0002 迁移）----
+
+// ErrInviteInvalid 表示邀请码不存在、已停用、已过期或用尽。
+// 一律返回同一个错误：不区分原因，探测者就无法判断某个码是否存在。
+var ErrInviteInvalid = errors.New("store: invite invalid")
+
+// ErrDeviceTaken 表示该设备已领过自助 Key（一设备一 Key）。
+var ErrDeviceTaken = errors.New("store: device already registered")
+
+// NewAPIKey 生成一把高熵 Bearer Key。自助签发不带 HMAC secret，
+// 因为 secret 一旦进浏览器/命令行历史就等于公开；Bearer 已足够写权限。
+func NewAPIKey() (string, error) {
+	b := make([]byte, 20)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("生成 API Key 失败: %w", err)
+	}
+	return "bk_" + hex.EncodeToString(b), nil
+}
+
+// NewInviteCode 生成易读邀请码：10 位有效字符，去掉 I/O/0/1 等易混字形，中间加分隔符。
+func NewInviteCode() (string, error) {
+	const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+	b := make([]byte, 10)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("生成邀请码失败: %w", err)
+	}
+	out := make([]byte, 0, 11)
+	for i, v := range b {
+		if i == 5 {
+			out = append(out, '-')
+		}
+		out = append(out, alphabet[int(v)%len(alphabet)])
+	}
+	return string(out), nil
+}
+
+// InviteRef 是邀请码的可展示状态（不含明文码，也不含完整哈希）。
+type InviteRef struct {
+	ID        int64
+	Ref       string
+	Label     string
+	MaxUses   int
+	Used      int
+	ExpiresAt int64 // 0 = 不过期
+	Enabled   bool
+}
+
+// APIKeyInfo 是一把 Key 的可展示信息。明文 Key 不可恢复（只存哈希）。
+type APIKeyInfo struct {
+	Ref       string // key_hash 前 12 位，作为吊销用的句柄
+	Name      string
+	Scope     string
+	DeviceID  string
+	Enabled   bool
+	CreatedAt int64
+}
+
+// CreateInvite 登记一个邀请码，返回明文码。ttl<=0 表示不过期。
+func (s *Store) CreateInvite(ctx context.Context, label string, maxUses int, ttl time.Duration) (string, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = "invite"
+	}
+	if maxUses < 1 {
+		maxUses = 1
+	}
+	code, err := NewInviteCode()
+	if err != nil {
+		return "", err
+	}
+	var expires sql.NullInt64
+	if ttl > 0 {
+		expires = sql.NullInt64{Int64: time.Now().Add(ttl).Unix(), Valid: true}
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO invite_codes(code_hash, label, max_uses, used, expires_at, enabled, created_at)
+		 VALUES(?,?,?,0,?,1,?)`,
+		KeyHash(code), label, maxUses, expires, time.Now().Unix()); err != nil {
+		return "", fmt.Errorf("登记邀请码失败: %w", err)
+	}
+	return code, nil
+}
+
+// ListInvites 列出邀请码状态（按登记顺序）。
+func (s *Store) ListInvites(ctx context.Context) ([]InviteRef, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, substr(code_hash,1,12), label, max_uses, used, IFNULL(expires_at,0), enabled
+		 FROM invite_codes ORDER BY id DESC LIMIT 200`)
+	if err != nil {
+		return nil, fmt.Errorf("查询邀请码失败: %w", err)
+	}
+	defer rows.Close()
+
+	var out []InviteRef
+	for rows.Next() {
+		var r InviteRef
+		var enabled int
+		if err := rows.Scan(&r.ID, &r.Ref, &r.Label, &r.MaxUses, &r.Used, &r.ExpiresAt, &enabled); err != nil {
+			return nil, fmt.Errorf("读取邀请码失败: %w", err)
+		}
+		r.Enabled = enabled != 0
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// RegisterSelfKey 用邀请码换一把绑定设备的 writer Key。
+//
+// 全程单事务：查设备唯一 → 校验码 → 消费一次 → 落 Key。任一步失败都回滚，
+// 避免出现「码被吃掉却没发出 Key」这种无法补救的状态。消费用带条件的 UPDATE
+// 并以 RowsAffected 判定，并发下不会超发。
+func (s *Store) RegisterSelfKey(ctx context.Context, code, deviceID, label string) (*APIKeyInfo, string, error) {
+	code = strings.TrimSpace(code)
+	deviceID = strings.TrimSpace(deviceID)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("开启注册事务失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		id        int64
+		maxUses   int
+		used      int
+		enabled   int
+		expiresAt sql.NullInt64
+	)
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, max_uses, used, enabled, expires_at FROM invite_codes WHERE code_hash=?`,
+		KeyHash(code)).Scan(&id, &maxUses, &used, &enabled, &expiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", ErrInviteInvalid
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("查询邀请码失败: %w", err)
+	}
+
+	now := time.Now().Unix()
+	if enabled == 0 || used >= maxUses || (expiresAt.Valid && expiresAt.Int64 > 0 && expiresAt.Int64 <= now) {
+		return nil, "", ErrInviteInvalid
+	}
+
+	// 先确认设备没领过，再消费名额：顺序反了会让“码打错了”的设备
+	// 收到“该设备已领过 Key”这种误导性的回答。
+	var dup int
+	err = tx.QueryRowContext(ctx, "SELECT 1 FROM api_keys WHERE device_id=? LIMIT 1", deviceID).Scan(&dup)
+	switch {
+	case err == nil:
+		return nil, "", ErrDeviceTaken
+	case !errors.Is(err, sql.ErrNoRows):
+		return nil, "", fmt.Errorf("检查设备绑定失败: %w", err)
+	}
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE invite_codes SET used = used + 1
+		 WHERE id=? AND used < max_uses AND enabled = 1
+		   AND (expires_at IS NULL OR expires_at > ?)`, id, now)
+	if err != nil {
+		return nil, "", fmt.Errorf("消费邀请码失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return nil, "", ErrInviteInvalid // 并发下被抢完
+	}
+
+	plain, err := NewAPIKey()
+	if err != nil {
+		return nil, "", err
+	}
+	hash := KeyHash(plain)
+	name := "self:" + hash[:8]
+	if l := strings.TrimSpace(label); l != "" {
+		name += ":" + l
+	}
+	if len(name) > 64 {
+		name = name[:64]
+	}
+
+	info := &APIKeyInfo{Ref: hash[:12], Name: name, Scope: ScopeWriter, DeviceID: deviceID, Enabled: true, CreatedAt: now}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO api_keys(key_hash, secret_enc, name, enabled, created_at, scope, device_id, invite_id)
+		 VALUES(?,?,?,1,?,?,?,?)`,
+		hash, "", name, now, ScopeWriter, deviceID, id); err != nil {
+		return nil, "", fmt.Errorf("写入 API Key 失败: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, "", fmt.Errorf("提交注册失败: %w", err)
+	}
+	return info, plain, nil
+}
+
+// SelfKey 返回某把 Key 的自视信息（供 GET /v1/keys/self）。一次查完，不借道 LookupAPIKey。
+func (s *Store) SelfKey(ctx context.Context, keyHash string) (*APIKeyInfo, error) {
+	var (
+		name, scope string
+		deviceID    sql.NullString
+		enabled     int
+		created     int64
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT name, scope, device_id, enabled, created_at FROM api_keys WHERE key_hash=?`, keyHash).
+		Scan(&name, &scope, &deviceID, &enabled, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("读取 Key 自视信息失败: %w", err)
+	}
+	return &APIKeyInfo{
+		Ref:       keyHash[:12],
+		Name:      name,
+		Scope:     scope,
+		DeviceID:  deviceID.String,
+		Enabled:   enabled != 0,
+		CreatedAt: created,
+	}, nil
+}
+
+// DisableAPIKey 停用一把 Key（幂等：已停用也返回成功）。
+func (s *Store) DisableAPIKey(ctx context.Context, keyHash string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE api_keys SET enabled=0 WHERE key_hash=?", keyHash)
+	if err != nil {
+		return fmt.Errorf("停用 API Key 失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListAPIKeys 列出全部 Key（只给哈希前缀，明文不可恢复）。
+func (s *Store) ListAPIKeys(ctx context.Context) ([]APIKeyInfo, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT substr(key_hash,1,12), name, scope, IFNULL(device_id,''), enabled, created_at
+		 FROM api_keys ORDER BY created_at DESC LIMIT 500`)
+	if err != nil {
+		return nil, fmt.Errorf("查询 API Key 列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	var out []APIKeyInfo
+	for rows.Next() {
+		var k APIKeyInfo
+		var enabled int
+		if err := rows.Scan(&k.Ref, &k.Name, &k.Scope, &k.DeviceID, &enabled, &k.CreatedAt); err != nil {
+			return nil, fmt.Errorf("读取 API Key 失败: %w", err)
+		}
+		k.Enabled = enabled != 0
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// RevokeAPIKeyByRef 按哈希前缀（≥8 位）或 name 精确吊销。
+// 命中 0 条返回 ErrNotFound，命中多条返回错误——宁可让人看清再动手。
+func (s *Store) RevokeAPIKeyByRef(ctx context.Context, ref string) (int64, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return 0, fmt.Errorf("吊销目标不能为空")
+	}
+	// 句柄两种形态：key_hash 的十六进制前缀（≥8 位），或 name（如 self:ab12cd34）。
+	// 判据只有一条——是不是够长的十六进制串，避免用「是否以 bk_ 开头」这类巧合。
+	isHashPrefix := len(ref) >= 8 && strings.IndexFunc(ref, func(r rune) bool {
+		return !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f'))
+	}) < 0
+
+	var res sql.Result
+	var err error
+	if isHashPrefix {
+		res, err = s.db.ExecContext(ctx, "UPDATE api_keys SET enabled=0 WHERE key_hash LIKE ?", ref+"%")
+	} else {
+		res, err = s.db.ExecContext(ctx, "UPDATE api_keys SET enabled=0 WHERE name=?", ref)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("吊销失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	switch {
+	case n == 0:
+		return 0, ErrNotFound
+	case n > 1:
+		return n, fmt.Errorf("%s 命中 %d 把 Key，请给更精确的句柄", ref, n)
+	}
+	return n, nil
 }

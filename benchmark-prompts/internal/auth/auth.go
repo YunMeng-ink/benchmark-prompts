@@ -37,14 +37,29 @@ func New(keys KeyStore, masterKey []byte, maxSkew time.Duration) *Authenticator 
 	return &Authenticator{keys: keys, masterKey: masterKey, maxSkew: maxSkew}
 }
 
-// Authenticate 成功返回身份名（用于日志与限流分桶），失败返回 ErrUnauthorized。
+// Identity 是一次成功鉴权的结果。
+//
+// 带 Scope 是因为自助注册之后「有一把有效 Key」不再等于「可以碰运维端点」；
+// 带 KeyHash 是给 GET/DELETE /v1/keys/self 定位调用者自己的那行记录。
+type Identity struct {
+	Name    string
+	Scope   string
+	KeyHash string
+}
+
+// IsAdmin 判断这把 Key 是否有运维作用域。
+func (i *Identity) IsAdmin() bool {
+	return i != nil && i.Scope == store.ScopeAdmin
+}
+
+// Authenticate 成功返回身份，失败返回 ErrUnauthorized。
 //
 // 优先级：Authorization: Bearer <key> > X-Api-Key/X-Timestamp/X-Signature。
-func (a *Authenticator) Authenticate(r *http.Request, body []byte) (string, error) {
+func (a *Authenticator) Authenticate(r *http.Request, body []byte) (*Identity, error) {
 	if az := r.Header.Get("Authorization"); strings.HasPrefix(az, "Bearer ") {
 		key := strings.TrimSpace(strings.TrimPrefix(az, "Bearer "))
 		if key == "" {
-			return "", ErrUnauthorized
+			return nil, ErrUnauthorized
 		}
 		return a.byAPIKey(r.Context(), key)
 	}
@@ -55,59 +70,61 @@ func (a *Authenticator) Authenticate(r *http.Request, body []byte) (string, erro
 	if ak != "" && tsv != "" && sig != "" {
 		return a.bySignature(r, ak, tsv, sig, body)
 	}
-	return "", ErrUnauthorized
+	return nil, ErrUnauthorized
 }
 
 // byAPIKey 走 Bearer 路径：只存 key 的 sha256，命中即认身份。
 // 浏览器前端只能用这条路（secret 不能下发到浏览器，见 docs/api.md §1.3）。
-func (a *Authenticator) byAPIKey(ctx context.Context, plainKey string) (string, error) {
-	rec, err := a.keys.LookupAPIKey(ctx, store.KeyHash(plainKey))
+func (a *Authenticator) byAPIKey(ctx context.Context, plainKey string) (*Identity, error) {
+	hash := store.KeyHash(plainKey)
+	rec, err := a.keys.LookupAPIKey(ctx, hash)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return "", ErrUnauthorized
+			return nil, ErrUnauthorized
 		}
-		return "", fmt.Errorf("查询 API Key 失败: %w", err)
+		return nil, fmt.Errorf("查询 API Key 失败: %w", err)
 	}
 	if !rec.Enabled {
-		return "", ErrUnauthorized
+		return nil, ErrUnauthorized
 	}
-	return rec.Name, nil
+	return &Identity{Name: rec.Name, Scope: rec.Scope, KeyHash: hash}, nil
 }
 
 // bySignature 校验 HMAC：需要可解密的 secret（不能只存哈希，否则无法验签）。
-func (a *Authenticator) bySignature(r *http.Request, plainKey, tsv, sig string, body []byte) (string, error) {
+func (a *Authenticator) bySignature(r *http.Request, plainKey, tsv, sig string, body []byte) (*Identity, error) {
 	ts, err := strconv.ParseInt(tsv, 10, 64)
 	if err != nil {
-		return "", ErrUnauthorized
+		return nil, ErrUnauthorized
 	}
 	skew := time.Since(time.Unix(ts, 0))
 	if skew < 0 {
 		skew = -skew
 	}
 	if a.maxSkew > 0 && skew > a.maxSkew {
-		return "", ErrUnauthorized
+		return nil, ErrUnauthorized
 	}
 
-	rec, err := a.keys.LookupAPIKey(r.Context(), store.KeyHash(plainKey))
+	hash := store.KeyHash(plainKey)
+	rec, err := a.keys.LookupAPIKey(r.Context(), hash)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return "", ErrUnauthorized
+			return nil, ErrUnauthorized
 		}
-		return "", fmt.Errorf("查询 API Key 失败: %w", err)
+		return nil, fmt.Errorf("查询 API Key 失败: %w", err)
 	}
 	if !rec.Enabled {
-		return "", ErrUnauthorized
+		return nil, ErrUnauthorized
 	}
 
 	secret, err := secretbox.Open(a.masterKey, rec.SecretEnc)
 	if err != nil {
-		return "", fmt.Errorf("解密 secret 失败: %w", err)
+		return nil, fmt.Errorf("解密 secret 失败: %w", err)
 	}
 	expected := Sign(secret, r.Method, r.URL.Path, ts, body)
 	if !hmac.Equal([]byte(expected), []byte(strings.ToLower(strings.TrimSpace(sig)))) {
-		return "", ErrUnauthorized
+		return nil, ErrUnauthorized
 	}
-	return rec.Name, nil
+	return &Identity{Name: rec.Name, Scope: rec.Scope, KeyHash: hash}, nil
 }
 
 // Canonical 构造待签名字符串，CLI/SDK 与服务端必须完全一致。

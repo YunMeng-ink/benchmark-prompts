@@ -176,6 +176,25 @@ data = { id, avg, count }   // 无人打分是 0/0，不是 404
 Cache-Control: no-store ；限流计入 get 桶（成本同级）
 ```
 
+### 6.9 POST /v1/keys（自助注册，2026-09-04 追加）
+```
+校验参数：inviteCode/deviceId 非空，deviceId ≤64、label ≤40 → 否则 422
+tx:
+  查 invite_codes（按 sha256(code)）→ 不存在/停用/过期/用尽 → 403 forbidden
+  查 api_keys.device_id 是否已占用 → 已占用 → 409 conflict（不消费名额）
+  UPDATE invite_codes SET used=used+1 WHERE ... AND used<max_uses → 0 行则 403
+  生成 bk_<40hex>，INSERT api_keys(scope=writer, device_id, invite_id)
+commit → 201 { key, ref, name, scope, deviceId }；Cache-Control: no-store
+```
+
+### 6.10 GET / DELETE /v1/keys/self
+```
+id = 鉴权身份（authMW 注入，含 KeyHash）
+GET    → store.SelfKey(id.KeyHash) → { ref, name, scope, deviceId, enabled, created_at }
+DELETE → store.DisableAPIKey(id.KeyHash) → { ref, revoked:true }；之后该 Key 一律 401
+不回显明文 Key（不可恢复）
+```
+
 ## 7. 带宽看门狗（`internal/metrics` + `internal/api`）
 
 - 后台协程每秒统计出站字节速率（滑动 60s 均值）。
@@ -203,24 +222,6 @@ Cache-Control: no-store ；限流计入 get 桶（成本同级）
 7. 优雅关闭：SIGINT/SIGTERM → server.Shutdown(10s) → store.Close()
 ```
 
-## 11. 运维子命令（同一个二进制）
-
-审核与备份不需要单独的后台系统，共用 `bench-server`：
-
-```bash
-bench-server -config c.yaml -put-key "alice:<key>:<secret>"   # 登记 API Key
-bench-server -config c.yaml -review                          # 列出待审核队列
-bench-server -config c.yaml -approve p_1a2b3c4d              # 审核通过
-bench-server -config c.yaml -reject  p_1a2b3c4d              # 审核打回
-bench-server -config c.yaml -backup  /backup/bench-20260902.db  # 一致性备份
-```
-
-要点：
-- 所有子命令复用同一纯 Go SQLite 驱动，**不依赖 `sqlite3` CLI**。
-- 可与运行中的服务**开同一 DB**（WAL + `busy_timeout=5000`），冒烟测试已验证跨进程审核。
-- `-approve/-reject` 会递增 `version`，从而自然驱动 ETag 失效与 delta 下发。
-- 主密钥从环境变量 `BENCH_SECRET_KEY`（32 字节 hex）读取；`-dev` 下缺失会生成一次性密钥并告警。
-
 ## 10. 错误处理约定（handler 侧）
 
 ```go
@@ -234,3 +235,40 @@ func handleGet(w, r) {
 
 - **不 panic**（除 main 装配）；`recover` 中间件兜底 500。
 - 所有 DB 错误落到 `internal`(500)，不回显 SQL 错误给客户端。
+## 11. 运维子命令（同一个二进制）
+
+审核与备份不需要单独的后台系统，共用 `bench-server`：
+
+```bash
+bench-server -config c.yaml -put-key "alice:<key>:<secret>"   # 登记 API Key（scope=admin）
+bench-server -config c.yaml -gen-invite "群发:20:30"           # 签发邀请码 label:次数:有效天数
+bench-server -config c.yaml -list-invites                     # 邀请码使用情况
+bench-server -config c.yaml -list-keys                        # 列出全部 Key（只给哈希前缀）
+bench-server -config c.yaml -revoke-key cb4f408e3095          # 按哈希前缀或 name 吊销
+bench-server -config c.yaml -review                          # 列出待审核队列
+bench-server -config c.yaml -approve p_1a2b3c4d              # 审核通过
+bench-server -config c.yaml -reject  p_1a2b3c4d              # 审核打回
+bench-server -config c.yaml -backup  /backup/bench-20260902.db  # 一致性备份
+```
+
+要点：
+- 所有子命令复用同一纯 Go SQLite 驱动，**不依赖 `sqlite3` CLI**。
+- 可与运行中的服务**开同一 DB**（WAL + `busy_timeout=5000`），冒烟测试已验证跨进程审核。
+- `-approve/-reject` 会递增 `version`，从而自然驱动 ETag 失效与 delta 下发。
+- 主密钥从环境变量 `BENCH_SECRET_KEY`（32 字节 hex）读取；`-dev` 下缺失会生成一次性密钥并告警。
+- `-put-key` 与 `-gen-invite` 都**只打印一次明文**（Key / 邀请码），库里只存 sha256；
+  丢了无法找回，只能重发。
+- `-revoke-key` 的句柄要么是 `key_hash` 的十六进制前缀（≥8 位），要么是 `name`；
+  命中多条会**报错而不是随便挑一条**，避免误吊销。
+
+### 11.1 作用域模型（自助注册之后）
+
+| 端点 | 要求 |
+|---|---|
+| `GET /v1/*`（含 `{id}/score`） | 匿名可读 |
+| `POST /v1/scores`、`POST /v1/prompts` | 任意有效 Key（`writer` 或 `admin`） |
+| `POST /v1/keys`、`GET/DELETE /v1/keys/self` | 注册匿名；self 需有效 Key |
+| `GET /-/metrics` | **必须 `admin`**（`adminRoute` = body → auth → admin → limit） |
+
+`-put-key` 签发的 Key 是 `admin`；自助注册的一律 `writer`。没有这层区分时，
+`/-/metrics` 只要求“有任意有效 Key”，自助注册一上线它就等于公开可读。

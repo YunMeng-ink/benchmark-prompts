@@ -24,6 +24,7 @@ ratelimit:
     random: 60
     get: 60
     delta: 5
+    keys: 5    # 自助注册：未配置即不限流，别删这行
   authed:
     meta: 60
     list: 300
@@ -32,6 +33,7 @@ ratelimit:
     delta: 30
     scores: 30
     upload: 10
+    keys: 30   # 查看/作废自己的 Key
 
 bandwidth:
   watch_enabled: true    # 带宽看门狗：超阈值时降级 delta/list

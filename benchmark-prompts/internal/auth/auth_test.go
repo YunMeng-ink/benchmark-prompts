@@ -44,7 +44,8 @@ func newFake(t *testing.T, plainKey, secret string, enabled bool) *fakeKeys {
 		t.Fatalf("Seal: %v", err)
 	}
 	return &fakeKeys{records: map[string]*store.APIKeyRecord{
-		store.KeyHash(plainKey): {Name: "tester", SecretEnc: enc, Enabled: enabled},
+		// 模拟运维 -put-key 登记的 Key：带 admin 作用域。
+		store.KeyHash(plainKey): {Name: "tester", SecretEnc: enc, Enabled: enabled, Scope: store.ScopeAdmin},
 	}}
 }
 
@@ -88,8 +89,11 @@ func TestBearerAuthenticates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("合法 Bearer 应通过: %v", err)
 	}
-	if who != "tester" {
-		t.Fatalf("身份应为 tester，得到 %q", who)
+	if who.Name != "tester" {
+		t.Fatalf("身份应为 tester，得到 %q", who.Name)
+	}
+	if who.Scope != store.ScopeAdmin {
+		t.Fatalf("运维登记的 Key 应带 admin 作用域，得到 %q", who.Scope)
 	}
 }
 
@@ -140,8 +144,11 @@ func TestSignatureHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("合法签名应通过: %v", err)
 	}
-	if who != "tester" {
-		t.Fatalf("身份应为 tester，得到 %q", who)
+	if who.Name != "tester" {
+		t.Fatalf("身份应为 tester，得到 %q", who.Name)
+	}
+	if who.Scope != store.ScopeAdmin {
+		t.Fatalf("运维登记的 Key 应带 admin 作用域，得到 %q", who.Scope)
 	}
 }
 
@@ -217,8 +224,8 @@ func TestWrongMasterKeyCannotVerify(t *testing.T) {
 	r.Header.Set("X-Timestamp", strconv.FormatInt(ts, 10))
 	r.Header.Set("X-Signature", Sign(testSecret, http.MethodPost, "/v1/scores", ts, body))
 
-	if who, err := a.Authenticate(r, body); err == nil || who != "" {
-		t.Fatalf("主密钥不匹配必须拒给且不得返回身份，得到 who=%q err=%v", who, err)
+	if who, err := a.Authenticate(r, body); err == nil || who != nil {
+		t.Fatalf("主密钥不匹配必须拒给且不得返回身份，得到 who=%v err=%v", who, err)
 	}
 }
 

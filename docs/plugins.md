@@ -5,7 +5,7 @@
 ## 1. 统一交互契约（两框架一致）
 
 > `bench` CLI 已实现（M3）。以下命令、参数与退出码已是**真实可用行为**，
-> 由 `scripts/smoke-cli.sh` 以真实二进制验证过 35 项。
+> 由 `scripts/smoke-cli.sh` 以真实二进制验证过 49 项。
 > 构建：`make build-cli` → `dist/bench`（Windows 为 `dist/bench.exe`）。
 
 | 用户意图 | 插件行为 | 底层命令 |

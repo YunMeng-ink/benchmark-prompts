@@ -43,6 +43,11 @@ func (c *Client) Score(ctx context.Context, id string, v int) (*ScoreResult, err
 func (c *Client) Upload(ctx context.Context, content string, tags []string) (*UploadResult, error)
 func (c *Client) UploadWithClientID(ctx context.Context, content string, tags []string, clientID string) (*UploadResult, error)
 
+// 凭据自助注册（api.md §3.9、§3.10）：deviceId 沿用打分那套稳定指纹。
+func (c *Client) RegisterKey(ctx context.Context, inviteCode, label string) (*KeyIssue, error)
+func (c *Client) KeySelf(ctx context.Context) (*KeySelf, error)
+func (c *Client) RevokeKeySelf(ctx context.Context) (ref string, err error)
+
 // 离线与状态：
 func (c *Client) Cached(ctx context.Context, id string) (*Prompt, error)
 func (c *Client) CheckStatus(ctx context.Context) (*Status, error)
@@ -117,6 +122,9 @@ bench get <id>                    [--json] [--local]       # 一键测试；--lo
 bench random [--tag=] [--exclude=] [--fresh] [--json]      # 随机测试；--fresh 排除已见过
 bench list [--tag=] [--limit=] [--all] [--json]            # 浏览摘要（不含正文）
 bench score <id> <1-5>            [--json]                 # 打分（自动复用 device_id）
+bench key new --invite=<码> [--label=备注] [--json]         # 自助注册：换 Key 并写入配置
+bench key self                      [--json]                # 查看当前 Key 的作用域/状态
+bench key revoke                    [--json]                # 作废当前 Key 并从配置清除
 bench upload (-c 文本|-f 文件|管道) [-t a,b] [--client-id=] [--json]
 bench config init|show|set                                 # init 需 --endpoint
 bench reset                                                # 清缓存（保留 device_id）

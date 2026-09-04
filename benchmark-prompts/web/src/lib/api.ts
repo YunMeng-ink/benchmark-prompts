@@ -196,6 +196,24 @@ const qs = (params: Record<string, string | number | undefined>): string => {
 	return s ? `?${s}` : "";
 };
 
+/** 自助注册的返回值：明文 Key 只在这里出现一次。 */
+export interface KeyIssue {
+	key: string;
+	ref: string;
+	name: string;
+	scope: string;
+	deviceId: string;
+}
+
+export interface KeySelf {
+	ref: string;
+	name: string;
+	scope: string;
+	deviceId: string;
+	enabled: boolean;
+	created_at: number;
+}
+
 export const api = {
 	meta: () => request<MetaData>("/meta"),
 	list: (opts: { cursor?: string; limit?: number; tag?: string }) => request<ListData>(`/prompts${qs(opts)}`),
@@ -208,6 +226,15 @@ export const api = {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ id, value, deviceId: deviceId() }),
 		}).then((e) => e.data as { avg: number; count: number }),
+	/** 用邀请码换一把绑定本设备的 writer Key；deviceId 沿用打分那套稳定指纹。 */
+	registerKey: (inviteCode: string, label = "") =>
+		request<KeyIssue>("/keys", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ inviteCode, deviceId: deviceId(), label }),
+		}).then((e) => e.data as KeyIssue),
+	selfKey: () => request<KeySelf>("/keys/self"),
+	revokeSelfKey: () => request<{ ref: string; revoked: boolean }>("/keys/self", { method: "DELETE" }),
 	upload: (content: string, tags: string[]) =>
 		request<UploadData>("/prompts", {
 			method: "POST",

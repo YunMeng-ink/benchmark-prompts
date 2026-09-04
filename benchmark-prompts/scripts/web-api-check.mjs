@@ -121,7 +121,64 @@ try {
 	else ok("not_found 翻译成中文可行动提示");
 }
 
-// —— 8. 未配置地址 → local_error，而不是含糊的网络错误 ——
+// —— 8. 自助注册闭环（邀请码 → Key → 自视 → 作废）——
+const invite = process.env.WEB_INVITE ?? "";
+if (invite) {
+	setApiKey(""); // 用匿名身份申请
+	const issued = await api.registerKey(invite, "冒烟机");
+	if (!issued?.key?.startsWith("bk_")) err(`注册没返回可用 Key：${JSON.stringify(issued)}`);
+	else ok("邀请码换到自助 Key");
+	if (issued?.scope !== "writer") err(`自助 Key 作用域应为 writer，得到 ${issued?.scope}`);
+	else ok("自助 Key 作用域是 writer（不是 admin）");
+
+	setApiKey(issued.key);
+	const self = (await api.selfKey(issued.key)).data;
+	if (!self?.ref || self.enabled !== true) err(`自视信息异常：${JSON.stringify(self)}`);
+	else ok("自视端点报告 ref/enabled");
+	if (JSON.stringify(self).includes(issued.key)) err("自视端点回显了明文 Key");
+	else ok("自视端点不回显明文 Key");
+
+	const st = await api.score(seedId, 3);
+	if (st?.count >= 1) ok("writer Key 可以打分");
+	else err(`writer Key 打分结果异常：${JSON.stringify(st)}`);
+
+	const rev = (await api.revokeSelfKey()).data;
+	if (rev?.revoked !== true) err(`作废未被确认：${JSON.stringify(rev)}`);
+	else ok("可作废自己这把 Key");
+
+	try {
+		await api.selfKey();
+		err("已作废的 Key 竟仍可用");
+	} catch (e) {
+		if (e instanceof ApiError && e.code === "unauthorized") ok("作废后请求被拒（401）");
+		else err(`作废后应 401，实际 ${e?.code ?? e}`);
+	}
+
+	// 同设备重复申请必须被拒（一设备一 Key）
+	setApiKey("");
+	try {
+		await api.registerKey(invite, "重复");
+		err("同一设备重复申请竟然成功");
+	} catch (e) {
+		if (e instanceof ApiError && e.code === "conflict") ok("同设备重复申请 → conflict");
+		else err(`应 conflict，实际 ${e?.code ?? e}`);
+	}
+
+	// 无效邀请码：forbidden，且文案不区分"不存在/过期/用尽"
+	try {
+		await api.registerKey("BOGUS-CODE", "x");
+		err("无效邀请码竟然通过");
+	} catch (e) {
+		if (e instanceof ApiError && e.code === "forbidden") ok("无效邀请码 → forbidden");
+		else err(`应 forbidden，实际 ${e?.code ?? e}`);
+		if (!describeError(e).includes("Key")) err(`无效码的提示不可行动：${describeError(e)}`);
+		else ok("无效码提示指向填 Key/邀请码");
+	}
+} else {
+	console.log("SKIP 自助注册闭环（未提供 WEB_INVITE）");
+}
+
+// —— 9. 未配置地址 → local_error，而不是含糊的网络错误 ——
 globalThis.window.__BENCH_WEB__.apiBase = "";
 try {
 	await api.meta();

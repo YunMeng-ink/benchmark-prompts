@@ -306,6 +306,69 @@
 - `Cache-Control: no-store`：分数随每次提交变化，且聚合查询极轻，不值得缓存。
 - 限流计入 `get` 端点的桶（成本同级别）。
 
+### 3.9 `POST /v1/keys` —— 用邀请码自助注册 Key
+
+> 2026-09-04 追加（契约只增不改不删）。动机：Key 原先只能由运维者在服务器上
+> `-put-key` 逐条登记，使用者没有获取途径。现在运维者签发**邀请码**，使用者自助换 Key。
+
+**鉴权：** 不需要（注册动作本身就是发凭据）。限流见 §6 的 `keys` 行。
+
+**请求体：**
+
+```jsonc
+{
+  "inviteCode": "CQV7Z-XXCEU",   // 运维者 -gen-invite 签发，形如 XXXXX-XXXXX
+  "deviceId": "a1b2c3...",        // 客户端稳定指纹，与 §3.6 同一个
+  "label": "我的笔记本"            // 可选，≤40 字符，仅用于人读
+}
+```
+
+**响应：**
+
+```jsonc
+// 201
+{
+  "ok": true,
+  "data": {
+    "key": "bk_9f3a2c…",         // 明文 Key，只在这次响应出现；服务端只存 sha256
+    "ref": "cb4f408e3095",        // key_hash 前 12 位，吊销时用的句柄
+    "name": "self:cb4f408e:我的笔记本",
+    "scope": "writer",            // 自助注册永远是 writer，拿不到 admin
+    "deviceId": "a1b2c3…"
+  },
+  "error": null, "cursor": null, "v": 1
+}
+```
+
+**规则：**
+- **一设备一 Key**：同一 `deviceId` 重复申请返回 `409 conflict`，不会悄悄发第二把。
+- 邀请码按 `max_uses` 消费；**校验顺序是先验码、再查设备**，所以码打错时得到的是
+  `forbidden` 而不是"该设备已领过 Key"这种误导性回答；设备冲突时**不消费**名额。
+- 邀请码不存在 / 已停用 / 已过期 / 已用尽一律返回 `403 forbidden` 同一文案，
+  否则本端点会变成邀请码存在性探针。
+- 响应带 `Cache-Control: no-store`。明文 Key 不可找回，丢了只能重新申请。
+- 自助 Key 只有 Bearer 一条鉴权路（不下发 HMAC secret，见 §1.3）。
+
+### 3.10 `GET /v1/keys/self` 与 `DELETE /v1/keys/self` —— 查看 / 作废自己这把 Key
+
+**鉴权：** 需要（Bearer 或签名均可）。只能操作调用者自己的 Key，无任何"列他人 Key"的能力。
+
+```jsonc
+// GET 200
+{ "ok": true,
+  "data": { "ref": "cb4f408e3095", "name": "self:cb4f408e", "scope": "writer",
+            "deviceId": "a1b2c3…", "enabled": true, "created_at": 1756791234 },
+  "error": null, "cursor": null, "v": 1 }
+
+// DELETE 200
+{ "ok": true, "data": { "ref": "cb4f408e3095", "revoked": true }, "error": null, "cursor": null, "v": 1 }
+```
+
+**规则：**
+- 两个响应都**不回显明文 Key**（本来也不可恢复）。
+- 作废是把 `enabled` 置 0，**不可撤销**；之后再用该 Key 请求一律 `401 unauthorized`。
+- 运维侧的对应入口是 `-list-keys` / `-revoke-key`（见 `server.md` §11）。
+
 ---
 
 ## 4. 增量同步协议（`/delta`）
@@ -377,6 +440,10 @@ GET /v1/prompts/delta?since=<catalog_hash>
 | `delta` | 5 次/分 | 30 次/分 |
 | `scores` | 不允许 | 30 次/分 |
 | `prompts`(上传) | 不允许 | 10 次/分 |
+| `keys`(自助注册) | 5 次/分 | 30 次/分 |
+
+> `keys` 的匿名额度**必须显式配置**：限流器的语义是"未配置即不限流"（`limiter.go`），
+> 漏配就等于把注册端点敞开的。
 
 - 超限返回 `429` + `Retry-After`。
 - 服务端另设**全局出站带宽看门狗**，接近配置阈值时优先对 `delta`/`list` 降级限流，保障 `get`/`random` 核心体验。

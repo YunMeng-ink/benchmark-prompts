@@ -315,6 +315,156 @@ func TestContractScoreStatsIsReadable(t *testing.T) {
 	}
 }
 
+// TestContractSelfServiceKeyFlow 覆盖自助注册闭环（docs/api.md §3.9、§3.10）：
+// 邀请码换 Key → writer 可写 → 自视信息 → **碰运维端点必须 403** → 自吊销后 401。
+func TestContractSelfServiceKeyFlow(t *testing.T) {
+	h := newHarness(t)
+	id := h.publish("自助注册用", nil)
+
+	code, err := h.st.CreateInvite(context.Background(), "契约测试", 2, 0)
+	if err != nil {
+		t.Fatalf("签发邀请码失败: %v", err)
+	}
+
+	body, err := json.Marshal(map[string]any{"inviteCode": code, "deviceId": "dev-contract", "label": "契约机"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	rec := h.do(http.MethodPost, "/v1/keys", body, nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("注册应 201，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+	e := decodeEnv(t, rec.Body.Bytes())
+	var issued struct {
+		Key      string `json:"key"`
+		Ref      string `json:"ref"`
+		Name     string `json:"name"`
+		Scope    string `json:"scope"`
+		DeviceID string `json:"deviceId"`
+	}
+	if err := json.Unmarshal(e.Data, &issued); err != nil {
+		t.Fatalf("注册载荷不符: %v / %s", err, e.Data)
+	}
+	if !strings.HasPrefix(issued.Key, "bk_") || issued.Scope != "writer" || issued.DeviceID != "dev-contract" {
+		t.Fatalf("签发的 Key 不符: %+v", issued)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("一次性凭据必须 no-store，得到 %q", cc)
+	}
+
+	auth := map[string]string{"Authorization": "Bearer " + issued.Key}
+
+	// 1. writer 可以正常写入。
+	sc, err := json.Marshal(map[string]any{"id": id, "value": 5, "deviceId": "dev-contract"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if rec := h.do(http.MethodPost, "/v1/scores", sc, auth); rec.Code != http.StatusOK {
+		t.Fatalf("writer Key 应能打分，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+
+	// 2. 自视信息：不泄露明文 Key。
+	rec = h.do(http.MethodGet, "/v1/keys/self", nil, auth)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("查自己的 Key 应 200，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+	selfBody := rec.Body.String()
+	if strings.Contains(selfBody, issued.Key) {
+		t.Fatalf("自视端点不得回显明文 Key")
+	}
+	var self struct {
+		Ref     string `json:"ref"`
+		Scope   string `json:"scope"`
+		Enabled bool   `json:"enabled"`
+	}
+	e = decodeEnv(t, rec.Body.Bytes())
+	if err := json.Unmarshal(e.Data, &self); err != nil {
+		t.Fatalf("自视载荷不符: %v", err)
+	}
+	if self.Ref != issued.Ref || self.Scope != "writer" || !self.Enabled {
+		t.Fatalf("自视信息不符: %+v", self)
+	}
+
+	// 3. 安全回归：自助签发的 writer Key 不能读运维端点。
+	//    没有 scope 之前 /-/metrics 只要求「有任意有效 Key」，自助注册上线即等于公开可读。
+	if rec := h.do(http.MethodGet, "/-/metrics", nil, auth); rec.Code != http.StatusForbidden {
+		t.Fatalf("writer Key 访问 /-/metrics 应 403，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+
+	// 4. 自吊销：之后所有请求都应 401。
+	rec = h.do(http.MethodDelete, "/v1/keys/self", nil, auth)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("自吊销应 200，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+	if sc2, err := json.Marshal(map[string]any{"id": id, "value": 3, "deviceId": "dev-contract"}); err == nil {
+		rec = h.do(http.MethodPost, "/v1/scores", sc2, auth)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("吊销后应 401，得到 %d / %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	// 5. 同一设备再用码注册 → 409，且不消费名额之外的语义由 store 层测试覆盖。
+	body2, _ := json.Marshal(map[string]any{"inviteCode": code, "deviceId": "dev-contract"})
+	rec = h.do(http.MethodPost, "/v1/keys", body2, nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("同设备重复注册应 409，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+	e = decodeEnv(t, rec.Body.Bytes())
+	if e.Error == nil || e.Error.Code != "conflict" {
+		t.Fatalf("错误码应为 conflict，得到 %+v", e.Error)
+	}
+}
+
+// TestContractKeyRegisterErrors 覆盖注册端点的输入与拒绝语义。
+// 关键要求：无效码与用尽码必须给出**不可区分**的响应，否则这里成了邀请码探针。
+func TestContractKeyRegisterErrors(t *testing.T) {
+	h := newHarness(t)
+
+	good, err := h.st.CreateInvite(context.Background(), "错误路径", 1, 0)
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	exhausted, err := h.st.CreateInvite(context.Background(), "将用尽", 1, 0)
+	if err != nil {
+		t.Fatalf("签发失败: %v", err)
+	}
+	if _, _, err := h.st.RegisterSelfKey(context.Background(), exhausted, "dev-used", ""); err != nil {
+		t.Fatalf("先占满名额失败: %v", err)
+	}
+
+	post := func(payload map[string]any) (int, string) {
+		h.t.Helper()
+		b, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		rec := h.do(http.MethodPost, "/v1/keys", b, nil)
+		e := decodeEnv(t, rec.Body.Bytes())
+		code := ""
+		msg := ""
+		if e.Error != nil {
+			code, msg = e.Error.Code, e.Error.Message
+		}
+		return rec.Code, code + "|" + msg
+	}
+
+	if c, got := post(map[string]any{"deviceId": "dev-x"}); c != http.StatusUnprocessableEntity || !strings.HasPrefix(got, "validation_failed") {
+		t.Fatalf("缺 inviteCode 应 422 validation_failed，得到 %d %s", c, got)
+	}
+	if c, got := post(map[string]any{"inviteCode": good}); c != http.StatusUnprocessableEntity || !strings.HasPrefix(got, "validation_failed") {
+		t.Fatalf("缺 deviceId 应 422 validation_failed，得到 %d %s", c, got)
+	}
+
+	_, unknown := post(map[string]any{"inviteCode": "NOPE-NOPE", "deviceId": "dev-u"})
+	_, used := post(map[string]any{"inviteCode": exhausted, "deviceId": "dev-w"})
+	if unknown != used {
+		t.Fatalf("无效码与用尽码的响应必须不可区分，得到 %q 与 %q", unknown, used)
+	}
+	if !strings.HasPrefix(unknown, "forbidden|") {
+		t.Fatalf("邀请码无效应 403 forbidden，得到 %q", unknown)
+	}
+}
+
 func TestContractRandomOnEmptyCatalog(t *testing.T) {
 	h := newHarness(t)
 	rec := h.do(http.MethodGet, "/v1/prompts/random", nil, nil)

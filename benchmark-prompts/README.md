@@ -11,7 +11,7 @@
 
 | 模块 | 状态 |
 |------|------|
-| 8 个 API 端点 | ✅ 已实现，按 `docs/api.md` 契约测试通过 |
+| 11 个 API 端点 | ✅ 已实现，按 `docs/api.md` 契约测试通过 |
 | 鉴权（Bearer Key + HMAC 签名） | ✅ 已实现 |
 | 分级限流 / gzip / ETag 304 | ✅ 已实现 |
 | 增量同步（catalog hash + delta） | ✅ 已实现 |
@@ -21,15 +21,17 @@
 | `bench` CLI（meta/sync/get/random/list/score/upload/config/reset/version） | ✅ 已实现（M3） |
 | Pi 适配（5 个工具 + 6 个斜杠命令 + 配套 skill） | ✅ 已实现并真实验证（M4） |
 | DSH 适配 | ✅ **已实现并真实验证**（Cordis 插件：5 工具 + 6 命令 + skill 复用；`make smoke-dsh` 19/19，要点见 `plugins/dsh/README.md` 与 `../docs/handover-dsh.md`） |
-| 前端站点（列表/随机/详情/打分/上传） | ✅ 已实现并本地真验证（Astro 纯静态 + Preact 岛；`make smoke-web` 45/45，M5。上 CDN 属 M6） |
+| 凭据发放（邀请码自助注册 + 作用域隔离） | ✅ 已实现（`-gen-invite` 签发；`POST /v1/keys` 换 Key；自助 Key 只有 writer，读不到 `/-/metrics`） |
+| 前端站点（列表/随机/详情/打分/上传/申请 Key） | ✅ 已实现并本地真验证（Astro 纯静态 + Preact 岛；`make smoke-web` 58/58，M5。上 CDN 属 M6） |
 | 发布工程（版本注入 / 8 平台产物 / 校验值 / 产物验证） | ✅ 已实现（`make release`、`make release-verify`） |
 | 前端 / 部署 | ⬜ 后续（M5、M6） |
 
 验证结果：`go build` ✅ ｜ `go vet` ✅ ｜ `staticcheck` 零发现 ｜ `gofmt` ✅ ｜
 `go test -race` **14/14 包通过** ｜
-聚合覆盖率 **78.3%** ｜ `scripts/smoke.sh` **47/47** ｜ `scripts/smoke-cli.sh` **35/35** ｜
+聚合覆盖率 **78.3%** ｜ `scripts/smoke.sh` **47/47** ｜ `scripts/smoke-cli.sh` **49/49** ｜
 `node --test` **40/40**（pi bench-core 33 + dsh bench-core 副本 7）+ **23/23**（dsh plugin.test）｜
-`make typecheck-dsh` ✅ ｜ `scripts/smoke-pi.sh` **12/12**、`scripts/smoke-dsh.sh` **19/19**（真实框架 + 真实 LLM 调用）。
+`make typecheck-dsh` ✅ ｜ `scripts/smoke-pi.sh` **12/12**、`scripts/smoke-dsh.sh` **19/19**（真实框架 + 真实 LLM 调用）、
+`scripts/smoke-web.sh` **58/58**。
 
 ## 快速开始
 

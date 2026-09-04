@@ -128,7 +128,12 @@ if [ -z "$ID1" ]; then
 fi
 ok "种子已上传 $ID1"
 "$SRV_BIN" -config "$CFG" -approve "$ID1" >"$WORK/approve.log" 2>&1 &&
-	ok "种子审核通过" || bad "审核失败" "$(cat "$WORK/approve.log")"
+	ok "种子审核通过"
+
+# 自助注册要用的邀请码（服务端只存哈希，所以必须在这里拿到明文）
+INV_CODE="$("$SRV_BIN" -config "$CFG" -gen-invite "smoke-web:3" 2>/dev/null \
+	| sed -n 's/邀请码：\([A-Z0-9-]*\).*/\1/p' | head -1)"
+if [ -n "$INV_CODE" ]; then ok "签发邀请码 $INV_CODE"; else bad "-gen-invite 没吐出码"; fi || bad "审核失败" "$(cat "$WORK/approve.log")"
 
 # ---------- 产物必须纯静态 ----------
 desc "产物：纯静态、可原样上 CDN"
@@ -197,6 +202,8 @@ if [ "$sup" = "1" ] && "$CURL" -fsS "${ORIGIN}/" >"$WORK/page.html" 2>"$WORK/pag
 		grep -q "$label" "$WORK/page.html" && ok "预渲染含「$label」" || bad "预渲染缺「$label」"
 	done
 	grep -q "astro-island" "$WORK/page.html" && ok "岛容器已就位（注水后接管交互）" || bad "缺岛容器"
+	grep -q "申请 Key" "$WORK/page.html" && ok "预渲染含「申请 Key」入口" || bad "缺申请 Key 入口"
+	grep -q "name=\"invite_code\"" "$WORK/page.html" && ok "邀请码输入框已预渲染" || bad "缺邀请码输入框"
 	grep -q "noscript" "$WORK/page.html" && ok "有 noscript 降级说明（并指向 bench CLI）" || bad "缺 noscript 降级"
 	grep -q -- "--accent:" "$WORK/page.html" && ok "CSS 已内联进 HTML（少一次请求）" ||
 		bad "样式没有内联，检查 build.inlineStylesheets"
@@ -248,7 +255,7 @@ esac
 # ---------- 浏览器那份取数代码对真源站 ----------
 desc "web/src/lib/api.ts 对真源站的实际行为"
 if WEB_BASE="$BASE/v1" WEB_KEY="web-smoke-key" WEB_SEED="$ID1" WEB_MARK="$MARK" WEB_TAG="$TAG" \
-	"$NODE" scripts/web-api-check.mjs >"$WORK/run.log" 2>&1; then
+	WEB_INVITE="$INV_CODE" "$NODE" scripts/web-api-check.mjs >"$WORK/run.log" 2>&1; then
 	st=0
 else
 	st=$?

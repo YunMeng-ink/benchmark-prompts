@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -43,7 +44,11 @@ func main() {
 	var (
 		cfgPath  = flag.String("config", "", "YAML 配置路径（留空则使用内置默认值）")
 		backupTo = flag.String("backup", "", "执行一次 VACUUM INTO 备份后退出")
-		putKey   = flag.String("put-key", "", "登记 API Key，格式 name:plainKey:plainSecret，然后退出")
+		putKey   = flag.String("put-key", "", "登记 API Key（admin 作用域），格式 name:plainKey:plainSecret，然后退出")
+		genInv   = flag.String("gen-invite", "", "签发自助注册用的邀请码，格式 label[:次数[:有效天数]]，打印明文码后退出")
+		listInv  = flag.Bool("list-invites", false, "列出邀请码使用情况后退出")
+		listKeys = flag.Bool("list-keys", false, "列出全部 API Key（只给哈希前缀，明文不可恢复）后退出")
+		revoke   = flag.String("revoke-key", "", "按 key_hash 前缀（≥8 位）或 name 吊销一把 Key 后退出")
 		review   = flag.Bool("review", false, "列出待审核（pending）提示词后退出")
 		approve  = flag.String("approve", "", "把指定 id 审核通过为 approved 后退出")
 		reject   = flag.String("reject", "", "把指定 id 审核打回为 rejected 后退出")
@@ -99,6 +104,63 @@ func main() {
 			logger.Error("登记 API Key 失败", "err", err)
 			os.Exit(1)
 		}
+		return
+	case *genInv != "":
+		if err := runGenInvite(ctx, st, *genInv, logger); err != nil {
+			logger.Error("签发邀请码失败", "err", err)
+			os.Exit(1)
+		}
+		return
+	case *listInv:
+		invites, err := st.ListInvites(ctx)
+		if err != nil {
+			logger.Error("读取邀请码失败", "err", err)
+			os.Exit(1)
+		}
+		fmt.Printf("邀请码 %d 个（码本身只存哈希，明文不可恢复）：\n", len(invites))
+		for _, iv := range invites {
+			expiry := "不过期"
+			if iv.ExpiresAt > 0 {
+				expiry = time.Unix(iv.ExpiresAt, 0).Format("2006-01-02 15:04")
+			}
+			state := "启用"
+			if !iv.Enabled {
+				state = "停用"
+			}
+			fmt.Printf("  %s	%s	%d/%d	%s	%s\n", iv.Ref, iv.Label, iv.Used, iv.MaxUses, expiry, state)
+		}
+		return
+	case *listKeys:
+		keys, err := st.ListAPIKeys(ctx)
+		if err != nil {
+			logger.Error("读取 API Key 失败", "err", err)
+			os.Exit(1)
+		}
+		fmt.Printf("API Key %d 把：\n", len(keys))
+		for _, k := range keys {
+			on := "可用"
+			if !k.Enabled {
+				on = "已吊销"
+			}
+			dev := "-"
+			if k.DeviceID != "" {
+				dev = k.DeviceID
+			}
+			fmt.Printf("  %s	%-7s	%-8s	%s	%s	%s\n", k.Ref, k.Scope, on, dev,
+				time.Unix(k.CreatedAt, 0).Format("2006-01-02"), k.Name)
+		}
+		return
+	case *revoke != "":
+		n, err := st.RevokeAPIKeyByRef(ctx, *revoke)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			logger.Error("没有匹配的 Key", "ref", *revoke)
+			os.Exit(1)
+		case err != nil:
+			logger.Error("吊销失败", "err", err, "ref", *revoke)
+			os.Exit(1)
+		}
+		logger.Info("已吊销", "ref", *revoke, "count", n)
 		return
 	case *review:
 		ps, err := st.ListByStatus(ctx, model.StatusPending, 50)
@@ -292,4 +354,47 @@ func preview(s string) string {
 		return string(r[:40]) + "…"
 	}
 	return string(r)
+}
+
+// runGenInvite 解析 label[:次数[:有效天数]] 并签发一个邀请码。
+// 明文码只在这里打印一次——库里只存 sha256，丢了只能重发。
+func runGenInvite(ctx context.Context, st *store.Store, spec string, log *slog.Logger) error {
+	parts := strings.Split(spec, ":")
+	label := strings.TrimSpace(parts[0])
+	if label == "" {
+		return fmt.Errorf("邀请码必须有 label，格式 label[:次数[:有效天数]]")
+	}
+	uses, days := 1, 0
+	if len(parts) > 1 {
+		n, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil || n < 1 {
+			return fmt.Errorf("次数必须是正整数，收到 %q", parts[1])
+		}
+		uses = n
+	}
+	if len(parts) > 2 {
+		d, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+		if err != nil || d < 0 {
+			return fmt.Errorf("有效天数必须是非负整数，收到 %q", parts[2])
+		}
+		days = d
+	}
+	var ttl time.Duration
+	if days > 0 {
+		ttl = time.Duration(days) * 24 * time.Hour
+	}
+	code, err := st.CreateInvite(ctx, label, uses, ttl)
+	if err != nil {
+		return err
+	}
+	expiry := "不过期"
+	if days > 0 {
+		expiry = time.Now().Add(ttl).Format("2006-01-02 15:04")
+	}
+	fmt.Printf("邀请码：%s\n", code)
+	fmt.Printf("用途：%s\n", label)
+	fmt.Printf("可用次数：%d\n", uses)
+	fmt.Printf("到期：%s\n", expiry)
+	log.Info("邀请码已签发", "label", label, "uses", uses, "days", days)
+	return nil
 }

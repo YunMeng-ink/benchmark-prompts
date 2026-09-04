@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/example/benchmark-prompts/internal/auth"
 	"github.com/example/benchmark-prompts/internal/ratelimit"
 )
 
@@ -31,10 +32,18 @@ func requestIDOf(r *http.Request) string {
 	return v
 }
 
-// identityOf 返回鉴权身份；匿名为空串。
-func identityOf(r *http.Request) string {
-	v, _ := r.Context().Value(ctxIdentity).(string)
+// identity 返回鉴权身份（含作用域与自己那把 Key 的哈希）；匿名为 nil。
+func identity(r *http.Request) *auth.Identity {
+	v, _ := r.Context().Value(ctxIdentity).(*auth.Identity)
 	return v
+}
+
+// identityOf 返回鉴权身份名，供日志与限流分桶；匿名为空串。
+func identityOf(r *http.Request) string {
+	if id := identity(r); id != nil {
+		return id.Name
+	}
+	return ""
 }
 
 // bodyBytes 取鉴权中间件已读取的请求体（HMAC 验签必须先读 body）。
@@ -201,22 +210,48 @@ func (s *Server) degradeMW(endpoint string, next http.HandlerFunc) http.HandlerF
 	}
 }
 
-// authMW 校验写请求；成功后把身份与已读 body 放进 context。
-func (s *Server) authMW(next http.HandlerFunc) http.HandlerFunc {
+// bodyMW 读取（并限长）请求体放进 context，供鉴权与 handler 共用。
+//
+// 原先只有 authMW 读体，于是「匿名但带 JSON 的 POST」只能自己再实现一遍，
+// 而 decodeJSON 依赖 ctxBody —— 忘了挂这层就会拿到空 body。显式成一更，
+// 顺带消除 handler 隐式依赖 authMW 副作用这件事。
+func (s *Server) bodyMW(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		if err != nil {
 			s.renderErr(w, ErrTooLarge)
 			return
 		}
-		who, err := s.authn.Authenticate(r, body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		ctx := context.WithValue(r.Context(), ctxBody, body)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+// authMW 校验写请求；成功后把身份放进 context。请求体由 bodyMW 负责读取。
+func (s *Server) authMW(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		who, err := s.authn.Authenticate(r, bodyBytes(r))
 		if err != nil {
 			s.renderErr(w, ErrUnauthorized)
 			return
 		}
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		ctx := context.WithValue(context.WithValue(r.Context(), ctxIdentity, who), ctxBody, body)
+		ctx := context.WithValue(r.Context(), ctxIdentity, who)
 		next(w, r.WithContext(ctx))
+	}
+}
+
+// adminMW 在 authMW 之后追加作用域要求。
+//
+// 自助注册上线后「持有一把有效 Key」不再等于「可以碰运维端点」：
+// 谁都能申请到 writer Key，若 /-/metrics 仍只看有没有鉴权，它就变成公开可读。
+func (s *Server) adminMW(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !identity(r).IsAdmin() {
+			s.renderErr(w, ErrForbidden.WithMessage("该端点需要 admin 作用域的 Key"))
+			return
+		}
+		next(w, r)
 	}
 }
 

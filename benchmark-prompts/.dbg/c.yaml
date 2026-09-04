@@ -1,0 +1,9 @@
+server:
+  addr: ":18123"
+store:
+  path: .dbg/s.db
+  migrate: true
+auth:
+  readonly_anonymous: true
+bandwidth:
+  watch_enabled: false

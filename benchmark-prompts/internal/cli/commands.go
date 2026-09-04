@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/example/benchmark-prompts/internal/buildinfo"
 	"github.com/example/benchmark-prompts/pkg/client"
@@ -25,9 +26,6 @@ func (a *App) cmdMeta(ctx context.Context, g *globals) error {
 	if err != nil {
 		return err
 	}
-	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
-	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
-	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	st, err := c.CheckStatus(ctx)
@@ -50,9 +48,6 @@ func (a *App) cmdSync(ctx context.Context, g *globals) error {
 	if err != nil {
 		return err
 	}
-	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
-	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
-	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	rep, err := c.Sync(ctx)
@@ -103,9 +98,6 @@ func (a *App) cmdGet(ctx context.Context, g *globals, args []string) error {
 	if err != nil {
 		return err
 	}
-	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
-	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
-	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	p, err := c.Get(ctx, id)
@@ -121,9 +113,6 @@ func (a *App) cmdRandom(ctx context.Context, g *globals, _ []string) error {
 	if err != nil {
 		return err
 	}
-	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
-	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
-	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	exclude := splitCSV(g.exclude)
@@ -156,9 +145,6 @@ func (a *App) cmdList(ctx context.Context, g *globals) error {
 	if err != nil {
 		return err
 	}
-	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
-	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
-	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	limit := g.limit
@@ -214,9 +200,6 @@ func (a *App) cmdScore(ctx context.Context, g *globals, args []string) error {
 	if err != nil {
 		return err
 	}
-	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
-	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
-	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	res, err := c.Score(ctx, args[0], value)
@@ -226,6 +209,102 @@ func (a *App) cmdScore(ctx context.Context, g *globals, args []string) error {
 	return a.emit(g, res, func() {
 		writeLine(a.out, fmt.Sprintf("已记录 %d 分；当前均分 %.2f（%d 人评分）", value, res.Avg, res.Count))
 	})
+}
+
+// cmdKey 管理自助注册的凭据。
+//
+//	new    用邀请码换一把绑定本设备的 Key，并写入配置（明文只打印这一次）
+//	self   查看当前这把 Key 的作用域与状态
+//	revoke 吊销当前 Key，并从配置里清掉
+func (a *App) cmdKey(ctx context.Context, g *globals, args []string) error {
+	sub := "new"
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	path, err := g.configPath()
+	if err != nil {
+		return err
+	}
+	c, err := a.clientFor(g)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	switch sub {
+	case "new":
+		invite := strings.TrimSpace(g.invite)
+		if invite == "" {
+			return fmt.Errorf("用法: bench key new --invite=<邀请码> [--label=备注]")
+		}
+		res, err := c.RegisterKey(ctx, invite, strings.TrimSpace(g.label))
+		if err != nil {
+			return err
+		}
+		// 不 ApplyEnv：配置里只写真实持久化的东西，不把环境变量落盘。
+		cfg, err := client.LoadConfig(path)
+		if err != nil {
+			return err
+		}
+		cfg.APIKey = res.Key
+		cfg.Secret = "" // 自助签发的 Key 只有 Bearer 一条路，没有 HMAC secret
+		if err := cfg.Save(path); err != nil {
+			return err
+		}
+		return a.emit(g, map[string]any{
+			"key":       res.Key,
+			"ref":       res.Ref,
+			"name":      res.Name,
+			"scope":     res.Scope,
+			"device_id": res.DeviceID,
+			"config":    path,
+		}, func() {
+			writeLine(a.out, "注册成功。明文 Key 只打印这一次：")
+			writeLine(a.out, "  "+res.Key)
+			writeLine(a.out, "  ref="+res.Ref+"  scope="+res.Scope+"  device="+res.DeviceID)
+			writeLine(a.out, "已写入配置 "+path)
+			a.notef(g, "这是可写凭据：别贴进聊天记录或截图。一台设备一把，丢了只能重新拿邀请码。")
+		})
+
+	case "self":
+		info, err := c.KeySelf(ctx)
+		if err != nil {
+			return err
+		}
+		return a.emit(g, info, func() {
+			state := "可用"
+			if !info.Enabled {
+				state = "已吊销"
+			}
+			writeLine(a.out, "  ref        = "+info.Ref)
+			writeLine(a.out, "  name       = "+info.Name)
+			writeLine(a.out, "  scope      = "+info.Scope+"（admin 才能读运维端点）")
+			writeLine(a.out, "  device_id  = "+orNone(info.DeviceID))
+			writeLine(a.out, "  状态       = "+state)
+			writeLine(a.out, "  登记于     = "+time.Unix(info.CreatedAt, 0).Format("2006-01-02 15:04"))
+		})
+
+	case "revoke":
+		ref, err := c.RevokeKeySelf(ctx)
+		if err != nil {
+			return err
+		}
+		cfg, err := client.LoadConfig(path)
+		if err != nil {
+			return err
+		}
+		cfg.APIKey = ""
+		if err := cfg.Save(path); err != nil {
+			return err
+		}
+		return a.emit(g, map[string]any{"ref": ref, "revoked": true}, func() {
+			writeLine(a.out, "已吊销 "+ref+"，并从 "+path+" 清除 api_key")
+			writeLine(a.out, "吊销不可撤销；要再写得用新的邀请码重新注册。")
+		})
+
+	default:
+		return fmt.Errorf("用法: bench key new|self|revoke")
+	}
 }
 
 // cmdUpload 支持 -c / -f / 管道三种输入，并提示用 --client-id 获得可重放性。
@@ -253,9 +332,6 @@ func (a *App) cmdUpload(ctx context.Context, g *globals) error {
 	if err != nil {
 		return err
 	}
-	// 必须显式 Close：缓存是 SQLite 句柄。CLI 进程短命，靠 OS 回收也能走，
-	// 但 Windows 上未关的句柄会让临时目录删不掉 —— 测试因此在 Windows 上偶发失败。
-	defer func() { _ = c.Close() }()
 	defer c.Close()
 
 	tags := splitCSV(g.tags)

@@ -42,8 +42,8 @@
 
 1. **体积**：**不设硬预算**（2026-09-03 决定）。但构建必须**报告**每个产物的
    gzip 体积，作为观测指标归档；不得无声增长。真正的硬约束是下面两条。
-   当前基线（`make web-build` 输出，Astro 7.2.10 + Preact 岛，45 项冒烟同次实测）：
-   首屏必经 **19.7 KB gzip**（其中 JS 15.1 KB），产物合计 20.3 KB gzip。
+   当前基线（`make web-build` 输出，Astro 7.2.10 + Preact 岛，58 项冒烟同次实测）：
+   首屏必经 **20.6 KB gzip**（其中 JS 15.7 KB），产物合计 21.1 KB gzip。
    顺便说明：当初的 20 KB 预算并非被源站带宽逼出来的——前端根本不该回源，
    它约束的是慢链路上的用户体验。
 2. **缓存**：产物必须带内容 hash 文件名 + `Cache-Control` 长缓存，CDN 开 gzip/br。
@@ -105,7 +105,7 @@ make web-install   # pnpm install（锁定 pnpm-lock.yaml）
 make web-build     # astro build → web/dist/ + 打印每个产物的 gzip 体积
 make web-preview   # 本地预览，配合 scripts/smoke-web.sh 做真源站验证
 make web-check     # biome + astro check（前端 0 errors）+ 体积报告
-make smoke-web     # 45 项：真源站 + 真产物 + 直接跑浏览器那份 api.ts
+make smoke-web     # 58 项：真源站 + 真产物 + 直接跑浏览器那份 api.ts
 ```
 
 手工验收：断网仅靠 CDN 缓存能打开首屏骨架；API 域与前端域分离（CORS 配置见下）。

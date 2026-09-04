@@ -95,8 +95,8 @@ func TestSDKSignatureAcceptedByServerVerifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("服务端应接受 SDK 产出的签名: %v", err)
 	}
-	if who != "e2e" {
-		t.Fatalf("身份应为 e2e，得到 %q", who)
+	if who == nil || who.Name != "e2e" {
+		t.Fatalf("身份应为 e2e，得到 %v", who)
 	}
 
 	// 攻击场景：沿用旧签名（或旧头）但偷换 payload，必须被拒
@@ -130,8 +130,8 @@ func TestSDKBearerAcceptedByServerVerifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Bearer 应被接受: %v", err)
 	}
-	if who != "web" {
-		t.Fatalf("身份应为 web，得到 %q", who)
+	if who == nil || who.Name != "web" {
+		t.Fatalf("身份应为 web，得到 %v", who)
 	}
 }
 
