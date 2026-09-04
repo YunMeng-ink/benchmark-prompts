@@ -7,25 +7,26 @@
     │  (静态资源)                │  (HTTPS /v1/*)
     ▼                            ▼
 ┌─────────────┐          ┌─────────────────────────────┐
-│ 亚太 CDN     │          │  源站（2H2G）                 │
+│     CDN     │          │  源站                        │
 │ (web/*)     │          │  ┌─────────────────────────┐ │
-└─────────────┘          │  │ api (net/http ServeMux)  │ │
-                         │  │  ├─ middleware 链         │ │
-                         │  │  ├─ handlers              │ │
-                         │  │  └─ 带宽看门狗            │ │
+└─────────────┘          │  │ api (net/http ServeMux) │ │
+                         │  │  ├─ middleware 链       │ │
+                         │  │  ├─ handlers            │ │
+                         │  │  └─ 带宽看门狗           │ │
                          │  └───────┬─────────────────┘ │
                          │          │                   │
                          │  ┌───────▼─────────────────┐ │
-                         │  │ auth  │ ratelimit │ sync │ │
+                         │  │ auth  │ ratelimit │ sync│ │
                          │  ├───────┴───────────┴─────┤ │
-                         │  │ store ─► cache ─► SQLite │ │
+                         │  │ store ─► cache ─► SQLite│ │
                          │  │ moderation              │ │
                          │  └─────────────────────────┘ │
                          └─────────────────────────────┘
 ```
 
 **核心原则：**
-1. **前端零回源**：`web/*` 全量放 CDN，源站带宽只做 API。
+1. **前端纯静态 + CDN 前置**：产物由源站托管，CDN 缓存分发；命中不回源，
+   未命中才占源站出口。所以**命中率直接决定源站带宽压力**。
 2. **读多写少**：热点读走内存 LRU；写路径（评分/上传）低频且量小。
 3. **无状态**：API 进程无本地会话，水平可扩（当前单机足够）。
 4. **可替换的存储接口**：`store` 定义接口，SQLite 是实现，后续换库不动上层。
@@ -80,6 +81,9 @@ ratelimit:
   anonymous: { meta: 10, list: 60, random: 60, get: 60, delta: 5 }
   authed:    { meta: 60, list: 300, random: 300, get: 300, delta: 30, scores: 30, upload: 10 }
 
+server:
+  static_dir: /var/lib/bench/web   # 非空则源站托管前端产物；留空=前端完全放对象存储
+
 bandwidth:
   watch_enabled: true
   max_mbps: 8.0                     # 出站告警/降级阈值，推导见 deployment.md §6
@@ -131,15 +135,13 @@ var (
 
 若切换 Node/TS，以下不变：API 契约、数据模型、目录 hash 算法、增量同步协议、CDN 方案。需要替换的仅是实现层：`net/http → Fastify`、`modernc.org/sqlite → node:sqlite`、`自实现 flag → commander`、`crypto/hmac → crypto`。建议评估完团队工具链后**一次性决策，不再反复**。
 
-> 实现进度备注：源站已按 **Go 主线** 完成并通过全部测试（含 45 项端到端冒烟），未发生切换。
-
 ## 8. 关键技术决策记录（ADR 简表）
 
 | 编号 | 决策 | 理由 |
 |------|------|------|
 | ADR-1 | 源站 Go + SQLite 单机单进程 | 2H2G 资源余量大，避免多进程/多服务运维 |
 | ADR-2 | 纯 Go SQLite 驱动（无 CGO） | 交叉编译零成本（供多平台 CLI） |
-| ADR-3 | 前端零回源 · 纯静态 | 源站带宽有限，前端资产必须完全脱离源站（阈值见 `deployment.md` §6） |
+| ADR-3 | 前端纯静态，源站托管 + CDN 缓存分发 | 产物无服务端逻辑，可整目录交付；CDN 挡住绝大部分请求，源站只承担冷启动与未命中回源（缓存规则见 `deployment.md` §7） |
 | ADR-4 | 增量同步用“目录 hash + delta 变更集” | 避免全量拉取，最小化重复流量 |
 | ADR-5 | 列表返回 PromptSummary（无正文） | 正文只在 get/random/delta 返回，省带宽 |
 | ADR-6 | 能力下沉 CLI，插件只做薄胶水 | 解 DSH/Pi 双框架适配 |

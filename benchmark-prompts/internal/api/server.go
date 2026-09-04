@@ -98,6 +98,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /-/metrics", s.adminRoute("metrics", s.handleMetrics))
 	mux.HandleFunc("OPTIONS /", s.handlePreflight)
 
+	// 前端产物由源站托管、CDN 在其前面缓存（docs/deployment.md §7）。
+	// 用 `GET /` 兜底会接住所有未匹配的 GET，所以 handler 内部必须先把
+	// /v1 与 /- 前挡下来：否则一个写错的 API 路径会拿到 200 + HTML，
+	// 客户端就再也分不清"接口不存在"和"站点首页"。
+	if s.cfg.Server.StaticDir != "" {
+		mux.HandleFunc("GET /", s.route("static", s.handleStatic))
+	}
+
 	// 由内向外依次包装（最外层最后赋值）。
 	// compress 必须包在 metrics 之内：这样 gzip 压缩后的字节才流入 metricsWriter，
 	// BytesOut 统计到的才是真实出站量（带宽看门狗的输入依据）。

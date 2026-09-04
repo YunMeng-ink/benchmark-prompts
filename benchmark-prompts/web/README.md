@@ -20,8 +20,8 @@ make smoke-web     # 端到端冒烟：真源站 + 真产物 + 真浏览器那�
 [`docs/deployment.md` §7](../../docs/deployment.md)**，此处不重复一份
 （同一事实抄两处必然漂移，见 `docs/README.md` §0）。
 
-一句话概括：`make web-build` 之后把 `web/dist/` 整目录上 CDN，
-**前端资产一个字节都不回源**，源站带宽只服务 API JSON。
+一句话概括：`make web-build` 之后把 `web/dist/` 同步到源站的 `server.static_dir`，
+CDN 挂在源站前面缓存分发——命中不回源，未命中才占源站出口。
 
 ### 换源站地址（不必重新构建）
 

@@ -135,7 +135,7 @@ export default function PromptList() {
 					加载更多
 				</button>
 			)}
-			{!hasMore && items.length > 0 && <p class="hint">已到末尾（正文要点进详情才拉取，列表只给摘要）</p>}
+			{!hasMore && items.length > 0 && <p class="hint">已到末尾</p>}
 		</section>
 	);
 }

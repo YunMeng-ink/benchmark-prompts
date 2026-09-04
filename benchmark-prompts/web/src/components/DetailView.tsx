@@ -63,7 +63,7 @@ export default function DetailView({ id }: { id: string }) {
 						<button type="button" onClick={copy}>
 							{copied ? "已复制" : "复制正文"}
 						</button>
-						<span class="hint">复制后直接粘给被测模型，不要改写（原样投喂才有可比性）</span>
+						<span class="hint">复制后原样粘给被测模型</span>
 					</p>
 					<ScorePanel id={prompt.id} />
 				</article>

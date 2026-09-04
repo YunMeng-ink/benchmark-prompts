@@ -607,6 +607,26 @@ func TestSaveTightensExistingFile(t *testing.T) {
 	}
 }
 
+// TestCacheJournalModeIsDelete 钉住本地缓存的 journal 模式这一**配置选择**。
+//
+// 它只断言"没有偷偷开回 WAL"，不声称能防住任何 Windows 清理问题——
+// 那个偶发抖动至今未定位，别拿这个测试当它的回归防线。
+func TestCacheJournalModeIsDelete(t *testing.T) {
+	c, err := OpenCache(filepath.Join(t.TempDir(), "cache.db"))
+	if err != nil {
+		t.Fatalf("打开缓存失败: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	var mode string
+	if err := c.db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
+		t.Fatalf("读 journal_mode 失败: %v", err)
+	}
+	if strings.ToLower(mode) != "delete" {
+		t.Fatalf("本地缓存应为 delete 模式（单连接场景 WAL 无收益），实际 %q", mode)
+	}
+}
+
 func TestNormalizeEndpoint(t *testing.T) {
 	ok := map[string]string{
 		"bench.example.com":         "https://bench.example.com",

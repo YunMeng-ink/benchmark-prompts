@@ -54,6 +54,10 @@ type Server struct {
 	WriteTimeout Duration `yaml:"write_timeout"`
 	TLSCert      string   `yaml:"tls_cert"`
 	TLSKey       string   `yaml:"tls_key"`
+
+	// StaticDir 非空时，源站直接托管该目录下的前端产物，由 CDN 缓存分发。
+	// 留空 = 不提供前端（前端整体放在对象存储/纯 CDN 时用它）。
+	StaticDir string `yaml:"static_dir"`
 }
 
 // Store SQLite 配置。

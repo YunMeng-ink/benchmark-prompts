@@ -12,7 +12,7 @@
 | [server.md](./server.md) | 源站实现规格 |
 | [client.md](./client.md) | SDK 与 CLI 实现规格 |
 | [plugins.md](./plugins.md) | DSH / Pi 插件适配规格（两框架能力对齐表、统一回填模板、边界情况） |
-| [handover-dsh.md](./handover-dsh.md) | **DSH 框架研究底稿**：插件 API 形状 + 本机源码行号，
+| [handover-dsh.md](./handover-dsh.md) | **DSH 框架研究底稿**：插件 API 形状 + 源码行号，
   兼 `bench` CLI 契约的**实测地面数据**采集（§9）与 §12 核实记录。实现已完成，
   日常使用看 `../benchmark-prompts/plugins/dsh/README.md` |
 | [frontend.md](./frontend.md) | 前端静态页规格 |
@@ -35,7 +35,7 @@
 | 线上 API 契约（字段、错误码、信封） | **[api.md](./api.md)**（冻结，只增不改不删）+ `internal/api/contract_test.go` | 其他文档引用而非重定义 |
 | `bench` CLI 的**命令面与退出码** | [client.md](./client.md) §5/§11 + `internal/cli/commands.go` | `plugins.md` §1 只列“插件要用哪几条” |
 | CLI `--json` 的**真实输出样本** | [handover-dsh.md](./handover-dsh.md) §9（由 `scripts/capture-contract.sh` 采集，可重跑再生） | — |
-| **DSH** 插件 API 形状与本机证据 | [handover-dsh.md](./handover-dsh.md) §2–§8（源码路径 + 行号） | `plugins.md` §4 只给结论摘要 |
+| **DSH** 插件 API 形状与实测证据 | [handover-dsh.md](./handover-dsh.md) §2–§8（源码路径 + 行号） | `plugins.md` §4 只给结论摘要 |
 | 插件**安装/使用/装载路线** | `../benchmark-prompts/plugins/{pi,dsh}/README.md`（由实现者维护） | `plugins.md` 不写安装步骤 |
 | 适配层规格与两框架对齐表 | [plugins.md](./plugins.md) | — |
 | 前端**规格**（页面、约束、体积基线） | [frontend.md](./frontend.md) | `../benchmark-prompts/web/README.md` 只讲怎么用、注意什么 |
@@ -57,7 +57,7 @@
 
 > 本节是文档校对与新增内容的唯一依据。括号里的原名是代码/API 中的字面量，保留不改。
 
-### 术语（一个概念只用一个词）
+### 术语
 
 > 领域名词的**定义**见 §7；本节只管**用词统一**。
 
@@ -87,11 +87,11 @@
 3. **命令引用**：写 `make smoke-dsh`，不写 `bash scripts/smoke-dsh.sh`——除非语境就要求“能直接执行”。
 4. **状态符号只用三个**：✅ 已完成 / ⬜ 未做 / 🔶 部分完成。`⚠️` 只用于警示块，
    `★` 只用于文件清单里标“先读这个”。
-5. **不写第一人称叙事**：错误原因以“事实 + 后果”陈述，保留教训、去掉自述。
-   例：“曾被误判为端口争用，实为句柄泄漏”，而不是“我曾猜错”。
-6. **小节引用一律用编号**（“见 §12”），不用“上一节/上面那个表”这类相对位置词。
-7. **批量改词先排除本节表格**：“不再使用”列里写的正是被替换的对象，不隔离就会
-   把规则本身改掉（本轮发生过）。改完必须回读上面两张表。
+5. **小节引用一律用编号**（“见 §12”），不用“上一节/上面那个表”这类相对位置词。
+6. **不写第一人称与过程自述**：错误原因按“事实 + 后果”陈述，保留可复用的规则、
+   删掉“我猜错了/本轮发生过/上一轮整理”这类叙述——要细节查提交历史。
+7. **批量改词先排除约定表本身**：“不再使用”列里写的正是被替换的对象，不隔离就会
+   把规则本身改掉。改完必须回读本节与 §0 两张表。
 
 ---
 
@@ -118,7 +118,7 @@
 | 项 | 实际情况 |
 |----|----------|
 | Go | `D:\Scoop\apps\go\current` → **go1.27.1**（scoop 已装，但不在 WSL 默认 PATH，需显式加入） |
-| Shell | 本机同时存在 **Git Bash(MINGW64)** 与 **WSL** 两种 bash，路径写法不同（`/d/...` 与 `/mnt/d/...`） |
+| Shell | Windows 上可能同时存在 **Git Bash(MINGW64)** 与 **WSL** 两种 bash，路径写法不同（`/d/...` 与 `/mnt/d/...`） |
 | GOPROXY | 默认 `proxy.golang.org` **不可达**，已改为 `https://goproxy.cn,direct` |
 
 首次拉依赖：
@@ -132,7 +132,7 @@ go mod tidy
 
 ## 2. 开发环境准备
 
-**本机（Windows）需安装 Go 工具链**：
+**验证环境的 Go 工具链**（Windows 需自行安装）：
 
 ```bash
 # 建议用官方安装包或 winget/scoop
@@ -173,7 +173,7 @@ benchmark-prompts/
 ├── plugins/
 │   ├── pi/                   # Pi 适配：extension/index.ts（工具+命令）+ skill/
 │   └── dsh/                    # DSH 侧适配（Cordis 插件薄胶水，M4 已实现并真机验证）
-├── web/                        # 前端：Astro + Preact 岛，构建后整目录上 CDN（零回源）
+├── web/                        # 前端：Astro + Preact 岛；产物由源站托管，CDN 前置缓存
 ├── internal/store/migrations/  # SQL 迁移（go:embed 内嵌，故无顶层 migrations/）
 ├── cmd/server 另有 -review/-approve/-reject/-backup/-put-key 运维子命令
 ├── deploy/                     # systemd unit、Dockerfile（可选）、备份脚本
@@ -204,7 +204,7 @@ benchmark-prompts/
 ## 6. 门禁（合并前必须通过）
 
 > **命令清单的唯一权威是 [testing.md](./testing.md) §8**（及其 §10 实测结果）。
-> 本节不再抄命令与项数 —— 上一轮整理就是因为同一个数字抄在 6 个文件里而全而失真。
+> 本节不抄命令与项数：同一个数字抄在多个文件里必然出现版本差，以权威处为准。
 
 不成文的约束（只有这里说）：
 
@@ -219,8 +219,6 @@ benchmark-prompts/
 ---
 
 ## 7. 领域名词定义
-
-> 本表只定义“是什么”；“该用哪个词”见 §0.5。
 
 | 术语 | 定义 |
 |------|------|

@@ -1,7 +1,6 @@
 # dsh-bench —— benchmark 提示词的 DSH（DeepSeek Harness）插件
 
-与 [`plugins/pi/`](../pi/README.md) 等价的 DSH 侧薄适配：**零业务逻辑**，
-一切能力经 `bench` CLI（ADR-6：CLI 是唯一跨语言稳定契约面）。
+ DSH 侧薄适配：**零业务逻辑**，一切能力经 `bench` CLI。
 
 | 能力 | 工具（LLM 调用） | 命令（用户直发） |
 |---|---|---|
@@ -21,7 +20,7 @@ dist/bench config init --endpoint <源站> --key <K> --secret <S>   # 读操作�
 
 打分/上传需要凭据；只读匿名可用。
 
-## 装载（三条路线，机制均已本机实测）
+## 装载
 
 ### A. 临时试跑 / CI —— `--patch` 覆盖层（不装任何东西）
 
@@ -56,7 +55,7 @@ dsh plugin --profile web add file:<仓库根>/benchmark-prompts/plugins/dsh
 （bundle 层的相对 name 锚定在**包目录**里，pnpm 复制安装后依然成立）。
 pnpm `file:` 是**复制**语义：改了源码要重新 `add` 一次（日常开发走路线 C）。
 
-### C. 开发回路（改文件重启即生效，不打包）
+### C. 开发回路（改文件重启即生效）
 
 在 profile 目录挂一个 **junction** 指回仓库：
 
@@ -69,7 +68,7 @@ mklink /J %USERPROFILE%\.dsh\profiles\web\plugins\dsh <仓库根 Windows 路径>
 
 > 相对路径**符号链接**（`ln -s`/`mklink` 不带 `/J`）不要用：Node ESM 默认 realpath，
 > 裸导入会解析回仓库原位而找不到框架包。junction（reparse point）无此问题。
-> profile 的 `patchReload: live` 只热更 patch 层，不热更已缓存的模块代码——别指望它。
+> profile 的 `patchReload: live` 只热更 patch 层，不热更已缓存的模块代码。
 
 ## 插件配置（`Config`，全部可留默认）
 
@@ -81,12 +80,11 @@ mklink /J %USERPROFILE%\.dsh\profiles\web\plugins\dsh <仓库根 Windows 路径>
 | `timeoutMs` | `60000` | 单次 bench 子进程超时预算 |
 | `graceMs` | `3000` | terminate 升级宽限 |
 
-**环境净化警告（源码 + 实测）**：DSH 给子进程的环境会剥掉匹配
+**环境净化警告**：DSH 给子进程的环境会剥掉匹配
 `/KEY|PASSWORD|SECRET|TOKEN/i` 的名字与全部 `DSH_*`（`dsh-subprocess/src/index.ts`）。
 也就是说 `BENCH_API_KEY` / `BENCH_SECRET` **不会**透传给 bench，即便你在启动 dsh 的
 shell 里设过。`BENCH_HOME` / `BENCH_ENDPOINT` 不在剥离名单、可透传，但**推荐一律显式
-配 `home`/`endpoint`**（或 `bench config init --home DIR` 写好配置文件）——
-别把正确性寄托在宿主环境上。
+配 `home`/`endpoint`**（或 `bench config init --home DIR` 写好配置文件）。
 
 ## skill（零代码）
 
@@ -96,7 +94,7 @@ cp -r plugins/pi/skill/benchmark-testing ~/.dsh/skills/
 
 DSH 与 pi 读同一套 `SKILL.md` 格式（name + description 两个 frontmatter 键即可双框架通用）。
 也可不动用户目录，在 patch 里给 `skill-filesystem` 配
-`customSkillDirs: ['D:/.../plugins/pi/skill']`（smoke 用的就是这招，避免污染全局）。
+`customSkillDirs: ['D:/.../plugins/pi/skill']`。
 **勿加** `allowed-tools` 等 Claude Code 旧字段——DSH 遇到旧字段名直接抛错。
 
 ## 文件与“两份 bench-core”的纪律
@@ -111,7 +109,7 @@ plugin.test.ts      假 ctx + 真 defineTool 的框架层功能测试（23 项�
 ```
 
 `bench-core.ts` 与 Pi 侧**改动必须双向同步**后，一起更新两处钉住的 sha256
-（`bench-core.test.ts`、`plugin.test.ts`）。漂移时测试红给你看。
+（`bench-core.test.ts`、`plugin.test.ts`）。
 本次适配已在两份里同步修掉一个类型缺陷（`as typeof envelope` 自指引出 `never`；
 tsc 检查逮到的，纯类型改动、运行时行为不变）。
 
@@ -122,36 +120,6 @@ make test-ts        # bench-core（pi + dsh 双份）+（有 DSH 安装树时）
 make typecheck-dsh  # tsc noEmit 对着 DSH 真实 .d.ts（缺 @types/node 自动降级 minimal 模式）
 make smoke-dsh      # 真装载：对照实验 + 真 LLM 调用 + 失败分支 + skill 发现
 ```
-
-`smoke-dsh.sh` 的方法论与 `smoke-pi.sh` 同源，另加一层 DSH 特化强化：
-
-1. **先证明检测有效**——故意写坏的插件必须被 DSH 报
-   `failed to import/apply loader entry bench-broken`，否则整个脚本 abort；
-2. **断言数据来自源站**——上传唯一标记串，且测试 patch 把 `tool-pwsh`/`tool-fs`/
-   `tool-web` 等一切旁路 `disabled: true`：输出里出现标记只可能经过本插件的工具
-   （第一轮实测就靠这条抓到了“模型自己跑 CLI 拿数据”的假通过路径）；
-3. **失败必须是失败**——not_found/越界/断网/缺 bench 四类分支若被当成成功即 FAIL；
-4. SKIP（缺 node/DSH 安装树/模型凭据）打印“不是通过”，与 PASS 严格区分。
-
-## 与 Pi 方言的差异备忘（写代码时最容易踩的）
-
-| | Pi | DSH |
-|---|---|---|
-| 参数 schema | TypeBox | schemastery 声明式对象；可选属性**省略** `required`（写 `required: false` 类型不过） |
-| `execute` 返回 | `{content, details}` | **只返回 JSON 值**，被强制的 `output.schema` 校验；模型文本 = `output.render` |
-| 取消 | 入参 `signal` | 第二入参 `exec.signal`，必须转发进子进程 spec |
-| 子进程 | `pi.exec` | `ctx.subprocess.spawn({argv…})` **argv 永不进 shell**；env 默认净化 |
-| slash 命令 | 注入文本给模型 / `setEditorText` | handler 直接在 agent 上执行、不过模型；返回 `CommandResult` 文本由 UI 渲染 |
-| 错误 | throw → isError | 同：throw（工具）/ `kind:'error'`（命令）；包装成正常返回会被当成功 |
-
-## 框架事实的核实结论在哪
-
-装载方式、环境净化范围、审批门控、`card` 枚举、命令展示原语、headless 形态、
-TS 装载方式、错误码文档缺口——这 8 项的核实结论与证据集中在
-[`docs/handover-dsh.md` §12](../../../docs/handover-dsh.md)，**本文件不再重复一份**
-（同一事实抄两处必然漂移，见 `docs/README.md` §0 的权威层级）。
-
-本文只保留日常安装与开发真正要用的部分：上面三条装载路线、配置表、差异速查表。
 
 ## 已知限制
 

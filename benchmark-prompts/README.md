@@ -5,7 +5,8 @@
 对外契约见 [`docs/api.md`](../docs/api.md)，发布记录见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
 **部署形态**：香港（HK）轻量服务器 2H2G + 10M 带宽 + 亚太 CDN（无备案）。
-前端静态资源全量走 CDN，**本服务只出 `/v1/*` JSON**。
+前端产物可由本服务托管（`server.static_dir`）并由 CDN 在其前面缓存；
+不配 `static_dir` 时本服务只出 `/v1/*` JSON。
 
 ## 状态
 
@@ -49,10 +50,10 @@ bash scripts/smoke.sh
 # 3b. CLI 二进制端到端冒烟（验证插件实际要调的东西）
 make smoke-cli
 
-# 3c. Pi 扩展真实验证（需本机有 pi 与模型凭据，否则自动 SKIP）
+# 3c. Pi 扩展真实验证（需已安装 pi 与模型凭据，否则自动 SKIP）
 make test-ts && make smoke-pi
 
-# 3d. DSH 插件真实验证（需本机 DSH 安装树与模型凭据，否则自动 SKIP）
+# 3d. DSH 插件真实验证（需 DSH 安装树与模型凭据，否则自动 SKIP）
 make smoke-dsh
 
 # 3e. 发布：全平台交叉编译 + 打包 + 校验值，然后验证产物
@@ -88,7 +89,7 @@ plugins/
   pi/                  Pi 适配（extension/index.ts + bench-core.ts + skill）
   dsh/                 DSH 适配（Cordis 插件：index.ts + 同一份 bench-core.ts + 两层测试）
 pkg/client/            公开 SDK：类型、错误码、签名、本地缓存、同步
-web/                 前端站点：Astro 纯静态 + Preact 岛，产物整目录上 CDN
+web/                 前端站点：Astro 纯静态 + Preact 岛，产物由源站托管、CDN 缓存
 ```
 
 ## 运维子命令

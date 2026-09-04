@@ -81,9 +81,12 @@ ok "server 编译完成"
 
 export BENCH_SECRET_KEY="1111111111111111111111111111111111111111111111111111111111111111"
 CFG="$WORK/config.yaml"
+# MSYS 的 pwd 是 /d/... 形式，Go 打不开；cygpath -m 给出 D:/... 正斜杠形式。
+WEBDIST="$(cygpath -m "$PWD/web/dist" 2>/dev/null || printf '%s' "$PWD/web/dist")"
 cat >"$CFG" <<YAML
 server:
   addr: ":${PORT}"
+  static_dir: ${WEBDIST}
 store:
   path: ${WORK}/web.db
   migrate: true
@@ -143,15 +146,41 @@ if [ -d web/dist/server ] || [ -d web/dist/_server ]; then
 else
 	ok "无 SSR 产物目录"
 fi
-# 源站不得代管前端（否则零回源不成立）。注意：因为注册了 OPTIONS / 兼底，
-# 根路径会返 405 而不是 404；断言看的是“有没有把前端让出去”，不是状态码形状。
-root_code="$("$CURL" -s -o "$WORK/root.body" -w '%{http_code}' "${BASE}/" 2>/dev/null)"
-root_ctype="$("$CURL" -sS -D - -o /dev/null "${BASE}/" 2>/dev/null | tr -d '\r' | grep -i '^content-type:' || true)"
-if [ "$root_code" = "200" ] || printf '%s' "$root_ctype" | grep -qi "text/html"; then
-	bad "源站竟能返回前端页面，零回源约束被破坏（code=$root_code ctype=$root_ctype）"
+# 源站托管前端 + CDN 缓存分发（docs/deployment.md §7）：根路径要能出首页，缓存头要分级。
+root_h="$("$CURL" -sS -D - -o "$WORK/root.body" "${BASE}/" 2>/dev/null | tr -d "\r")"
+case "$root_h" in
+*"HTTP/1.1 200"*) ok "源站能出首页（CDN 的回源目标）" ;;
+*) bad "源站出首页失败" "$(printf '%s' "$root_h" | head -2)" ;;
+esac
+grep -q "Benchmark 提示词库" "$WORK/root.body" && ok "首页内容是本站标题" || bad "首页内容不对"
+case "$root_h" in
+*must-revalidate*) ok "入口 HTML 用 must-revalidate（发版能立刻生效）" ;;
+*) bad "入口 HTML 缓存头不对" ;;
+esac
+ASSET="/$(find web/dist/_astro -name "*.js" | head -1 | cut -d/ -f3-)"
+ah="$("$CURL" -sS -D - -o /dev/null "${BASE}${ASSET}" 2>/dev/null)"
+case "$ah" in
+*immutable*) ok "带内容 hash 的资产可 immutable 永久缓存" ;;
+*) bad "资产缓存头不对" "$(printf '%s' "$ah" | head -3)" ;;
+esac
+ETAG="$(printf '%s' "$root_h" | sed -n 's/^[Ee][Tt]ag: //p' | head -1)"
+if [ -n "$ETAG" ]; then
+	c304="$("$CURL" -s -o /dev/null -w '%{http_code}' -H "If-None-Match: $ETAG" "${BASE}/")"
+	[ "$c304" = "304" ] && ok "入口 ETag 生效，回源校验拿 304（省回源字节）" ||
+		bad "If-None-Match 未产生 304" "got $c304"
 else
-	ok "源站不代管前端（根路径 code=$root_code，非 HTML）"
+	bad "入口没有 ETag"
 fi
+# 关键：静态兜底不得吞掉 API 路径（否则客户端分不清"接口不存在"和"首页"）。
+api404="$("$CURL" -sS "${BASE}/v1/no-such-endpoint" 2>/dev/null)"
+case "$api404" in
+*'"code":"not_found"'*) ok "未知 /v1 路径仍是 not_found 信封" ;;
+*) bad "未知 /v1 路径被静态接管" "$(printf '%s' "$api404" | head -c 80)" ;;
+esac
+case "$api404" in
+*"<!doctype"*|*"<html"*) bad "API 404 竟返回 HTML" ;;
+*) ok "API 错误不返回 HTML" ;;
+esac
 
 grep -q "_astro/" web/dist/index.html && ok "index.html 已挂载岛资产" ||
 	bad "index.html 里没有岛资产引用"

@@ -9,7 +9,7 @@
 make version            # 看将要注入的 VERSION / COMMIT / DATE 与来源
 make build-all          # 仅交叉编译（bench 5 平台 + server 3 平台）
 make release            # 编译 + 打包 tar.gz + sha256sums.txt + RELEASE-INFO
-make release-verify     # 验证：字节级注入证据 + 校验值 + 归档结构 + 本机真跑
+make release-verify     # 验证：字节级注入证据 + 校验值 + 归档结构 + 真跑产物
 ```
 
 版本单一来源：**`VERSION` 文件**；在 git 环境里自动用 `git describe` 覆盖。
@@ -30,7 +30,7 @@ make release-verify     # 验证：字节级注入证据 + 校验值 + 归档结
 只记 `-buildmode`/`-compiler`/`-trimpath` 与 `GO*` 环境变量，**不记 `-ldflags`**。
 
 改用字节级证据：`-X` 注入的 **构建时间戳**（秒级、本次唯一）必须出现在目标二进制里。
-再叠加“本机那一个真跑起来报告同一版本”作为机制正确性的强证据；
+再叠加“取其中一个真跑起来报告同一版本”作为机制正确性的强证据；
 并对该检查做过**对照实验**：抽掉 `-X` 重建一个产物，验证器确实只对它报错。
 
 ### 用户侧安装校验
@@ -98,9 +98,6 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 这些命令可与运行中的服务**共用同一个 DB 文件**（WAL + `busy_timeout=5000`），
 冒烟测试已跨进程验证。主密钥仅从环境变量 `BENCH_SECRET_KEY`（32 字节 hex）读取。
 
-```bash
-```
-
 ## 4. 监控（重点：源站出站带宽）
 
 > **本表与 §6 是全仓库唯一的带宽阈值权威定义**（约定见 `README.md` §0.5）。
@@ -159,25 +156,47 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 
 > 换套餐只改两处：本节数字 + `bandwidth.max_mbps`。其他文档不得出现阀值常量。
 
-## 7. 前端上 CDN（唯一权威）
+## 7. 前端：源站托管 + CDN 缓存分发（唯一权威）
 
-前端产物 `benchmark-prompts/web/dist/` 整目录上传 CDN，**不上传源站**。
+前端产物由**源站**提供，CDN 挡在前面缓存。命中不回源，未命中才消耗源站出口，
+所以 CDN 命中率是这套形态的关键指标。
 
 1. 构建：`make web-build`（顺带打印体积报告）。
-2. 上传整个 `dist/`，两组缓存头必须区分：
+2. 同步到源站：把 `web/dist/` 整目录放到服务器上的静态目录（如
+   `/var/lib/bench/web`），并在 `config.yaml` 里指向它：
 
-   | 文件 | `Cache-Control` | 理由 |
+   ```yaml
+   server:
+     static_dir: /var/lib/bench/web
+   ```
+
+   留空即回到"源站只出 API"的形态（前端整体放对象存储/纯 CDN 时用）。
+3. 缓存策略由源站直接下发 `Cache-Control`，分三级（实现见 `server.md` §8）：
+
+   | 路径 | `Cache-Control` | 理由 |
    |---|---|---|
-   | `index.html`、`runtime-config.js` | `no-cache` | 要保证发新版本与改源站地址能立刻生效 |
-   | `_astro/*`（文件名带内容 hash） | `public, max-age=31536000, immutable` | 内容变了文件名就变，可以永久缓存 |
+   | `/_astro/*`（文件名带内容 hash） | `public, max-age=31536000, immutable` | 内容变了文件名就变，可永久缓存 |
+   | `/`、`/index.html` | `public, max-age=0, must-revalidate` + 弱 ETag | 发版必须立刻生效；未变时靠 304 省字节 |
+   | `/runtime-config.js` 等 | `public, max-age=300, must-revalidate` | 部署期可直接改文件，但要能较快生效 |
 
-3. 源站 `config.yaml` 的 `cors.allowed_origins` 填**前端域名**（精确值，别留 `*`，
-   因为前端能带 Key 写入）。改完需重启源站生效。
-4. 自检三件事：`curl -I https://前端域名/` 有 `Content-Encoding: gzip`；
-   带 `Origin` 请求 `/v1/prompts` 能回显 ACAO 且带 `Vary: Origin`；
-   源站根路径**不能**返回 HTML（否则零回源不成立）。
+   CDN 侧对这三类**必须透传**源站的 `Cache-Control`，不要在 CDN 上另设一套
+   更长的入口缓存——那会让发版看起来"没生效"。
+4. CDN 配置要点：
+   - 回源地址 = 源站；`/_astro/*` 按目录设长缓存，`/` 与 `/runtime-config.js` 设
+     不缓存或极短缓存。
+   - 开启 gzip/br 与 `Vary: Accept-Encoding`（源站已带该头，别在 CDN 丢掉）。
+   - **`/v1/*` 与 `/-/*` 不要缓存**（源站已给 `no-store`/短 TTL，但 CDN 规则要显式排除）。
+   - 发版后若入口未刷新，用 CDN 的 URL/目录刷新，而不是改文件名。
+5. 前端与 API 同域（都走这个域名）时浏览器**不发跨域请求**，CORS 不再是必要条件。
+   若 CDN 域名与 API 域名不同，才需要把前端域名加进 `cors.allowed_origins`
+   （精确值，别留 `*`，因为前端能带 Key 写入）。
+6. 自检：
+   - `curl -I https://域名/` → 200、`Content-Encoding: gzip`、`Cache-Control` 含 `must-revalidate`
+   - `curl -I https://域名/_astro/<某个hash>.js` → `immutable`
+   - 带 `If-None-Match` 再请求首页 → 304
+   - `curl https://域名/v1/不存在` → 仍是 `not_found` 信封，**不是 HTML**
 
-`make smoke-web` 用本地静态服务器与真源站把这四条全部断言过一遍。
+`make smoke-web` 用真源站把这四条连同资产图一起断言。
 
 ## 8. 上线检查清单
 

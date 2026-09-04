@@ -9,15 +9,15 @@ import "../styles/global.css";
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Benchmark 提示词库</title>
-		<meta name="description" content="浏览、随机抽取、给本地模型跑过的提示词打分。纯静态站点，数据直连源站 /v1。" />
+		<meta name="description" content="浏览、随机抽取、给本地模型跑过的提示词打分。" />
 		<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14'>🧪</text></svg>" />
-		<!-- 部署后可直接改这个文件换源站地址，无需重新构建（见 web/README.md）。 -->
+		<!-- 部署后可直接改这个文件换源站地址，无需重新构建。 -->
 		<script is:inline src="/runtime-config.js"></script>
 	</head>
 	<body>
 		<header class="mast">
 			<h1>Benchmark 提示词库</h1>
-			<p>一句话抽题、原样投喂、给个 1–5 分。本站不碰模型，只帮你取题与记分。</p>
+			<p>抽题、原样投喂给本地模型、给个 1–5 分。</p>
 		</header>
 
 		<App client:load />

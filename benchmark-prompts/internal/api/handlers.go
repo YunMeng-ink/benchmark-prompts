@@ -3,9 +3,13 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"os"
+	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -450,4 +454,69 @@ func (s *Server) handleKeyRevokeSelf(w http.ResponseWriter, r *http.Request) {
 		"ref":     id.KeyHash[:12],
 		"revoked": true,
 	}, nil)
+}
+
+// ---- 前端静态托管（server.static_dir 非空时启用）----
+
+// 三类缓存策略：带内容 hash 的资产可以永久缓存；入口文件必须每次回源校验；
+// 其余（如部署期可改的 runtime-config.js）给一个短 TTL。
+const (
+	cacheImmutable = "public, max-age=31536000, immutable"
+	cacheEntry     = "public, max-age=0, must-revalidate"
+	cacheShort     = "public, max-age=300, must-revalidate"
+)
+
+// handleStatic 从 static_dir 提供前端产物。
+func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	root, err := filepath.Abs(s.cfg.Server.StaticDir)
+	if err != nil {
+		s.renderErr(w, ErrInternal.WithMessage("静态目录不可用"))
+		return
+	}
+	name := path.Clean(strings.TrimPrefix(r.URL.Path, "/"))
+	if name == "." || name == "/" || name == "" {
+		name = "index.html"
+	}
+	// API 与运维路径不能掉进静态兜底：宁可给契约信封，也不要返回 HTML 200。
+	if name == "v1" || strings.HasPrefix(name, "v1/") || name == "-" || strings.HasPrefix(name, "-/") {
+		s.renderErr(w, ErrNotFound.WithMessage("接口不存在"))
+		return
+	}
+
+	full := filepath.Join(root, filepath.FromSlash(name))
+	// 防穿越：Join 之后必须仍在 root 之内（Clean 已吃掉 ../，这里再兜一道）。
+	if full != root && !strings.HasPrefix(full, root+string(os.PathSeparator)) {
+		s.renderErr(w, ErrForbidden.WithMessage("路径越界"))
+		return
+	}
+
+	f, err := os.Open(full)
+	if err != nil {
+		// 静态资源找不到就是 404；不回落 index.html —— hash 路由不需要服务端重写，
+		// 回落只会把一个坏链接伪装成首页。
+		s.renderErr(w, ErrNotFound.WithMessage("资源不存在"))
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	st, err := f.Stat()
+	if err != nil || st.IsDir() {
+		s.renderErr(w, ErrNotFound.WithMessage("资源不存在"))
+		return
+	}
+
+	switch {
+	case strings.HasPrefix(name, "_astro/"):
+		w.Header().Set("Cache-Control", cacheImmutable)
+	case name == "index.html":
+		w.Header().Set("Cache-Control", cacheEntry)
+	default:
+		w.Header().Set("Cache-Control", cacheShort)
+	}
+	// 弱 ETag 用 size+mtime 足够：文件名本身带内容 hash 的那批永不变化，
+	// 入口文件则靠它把「没变」判成 304，省掉回源字节。
+	w.Header().Set("ETag", fmt.Sprintf(`W/"%x-%x"`, st.ModTime().UnixNano(), st.Size()))
+	w.Header().Set("Vary", "Accept-Encoding")
+
+	http.ServeContent(w, r, name, st.ModTime(), f)
 }

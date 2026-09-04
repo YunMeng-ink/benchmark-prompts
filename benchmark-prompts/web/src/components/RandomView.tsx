@@ -62,7 +62,7 @@ export default function RandomView() {
 			{err && <p class="error">{err}</p>}
 			{!prompt && !err && !loading && (
 				<p class="hint">
-					库里没有可用条目时会报 <code>not_found</code>，这不是故障——换标签或等审核通过。
+					没有可用条目时会报 <code>not_found</code>。
 				</p>
 			)}
 			{prompt && (

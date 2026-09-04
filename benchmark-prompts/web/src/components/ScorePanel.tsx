@@ -37,7 +37,7 @@ export default function ScorePanel({ id }: { id: string }) {
 			.score(id, value)
 			.then((d) => {
 				setStats({ id, avg: d.avg, count: d.count });
-				setNote(`已记录 ${value} 分（同一浏览器重复打分会覆盖旧分，不重复计数）`);
+				setNote(`已记录 ${value} 分`);
 			})
 			.catch((e: unknown) => setErr(describeError(e)))
 			.finally(() => setBusy(null));
@@ -49,7 +49,6 @@ export default function ScorePanel({ id }: { id: string }) {
 			{stats && (
 				<p class="score__now">
 					当前 <strong>{stats.avg.toFixed(2)}</strong> 分 · <strong>{stats.count}</strong> 人
-					{stats.count === 0 ? "（还没有人打分）" : ""}
 				</p>
 			)}
 			<div class="score__btns">

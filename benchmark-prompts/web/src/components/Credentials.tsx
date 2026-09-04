@@ -100,7 +100,7 @@ export default function Credentials() {
 					/>
 				</label>
 				<label class="block">
-					API Key（可选；只浏览不需要）
+					API Key
 					<input
 						name="bench_api_key"
 						autocomplete="off"
@@ -110,7 +110,7 @@ export default function Credentials() {
 							setSaved(false);
 							setKey(e.currentTarget.value);
 						}}
-						placeholder="留空则只能读；浏览/随机/详情都不需要 Key"
+						placeholder="留空则只能读"
 					/>
 				</label>
 				<p class="row">
@@ -133,7 +133,7 @@ export default function Credentials() {
 							setInvite(e.currentTarget.value);
 							setKeyErr("");
 						}}
-						placeholder="向源站维护者索取，形如 ABCDE-FGHIJ"
+						placeholder="形如 ABCDE-FGHIJ"
 					/>
 				</label>
 				<button type="button" disabled={busy || invite.trim() === ""} onClick={register}>
@@ -149,17 +149,15 @@ export default function Credentials() {
 			{issued && (
 				<div class="issued">
 					<p class="warn">
-						⚠️ 明文 Key <strong>只显示这一次</strong>，服务端只存哈希。现在复制保存：
+						明文 Key <strong>只显示这一次</strong>，请立即保存：
 					</p>
 					<code class="issued__key">{issued.key}</code>
-					<p class="hint">
-						句柄 {issued.ref} · 作用域 {issued.scope} · 设备 {issued.deviceId}。已自动填入上面的 API Key 并保存。
-					</p>
+					<p class="hint">已自动填入并保存 · 句柄 {issued.ref}</p>
 				</div>
 			)}
 			{keyErr && <p class="error">{keyErr}</p>}
 			<p class="hint">
-				⚠️ 这里存的 Key <strong>能写入</strong>（打分、上传）。只在自己的设备上填；公共机器请留空，只读浏览。
+				⚠️ 这把 Key <strong>能写入</strong>，公共机器请留空。
 			</p>
 		</details>
 	);

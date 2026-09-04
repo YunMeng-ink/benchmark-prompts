@@ -72,7 +72,7 @@ func TestContractRandom(t *testing.T) {
 ## 7. 前端真浏览器验收（2026-09-03 已跑）
 
 `make smoke-web` 覆盖取数代码与产物，但**覆盖不到水合语义与可访问性**，
-所以另用真实 Chrome（chrome-devtool MCP）点了一遍。环境：本机源站 + 本机静态服务器
+所以另用真实 Chrome 点了一遍。环境：本地源站 + 本地静态服务器
 （CORS 白名单只放行该 origin）+ 43 条已审核种子数据。
 
 逐项结果：
@@ -96,7 +96,7 @@ func TestContractRandom(t *testing.T) {
 
 ## 8. 发布门禁（实际可执行版）
 
-不再是“概念示意”——下面每一项都在本机真实跑过：
+每一项都真实跑过，不是概念示意：
 
 ```bash
 # 一条命令跑完开发门禁（Go + TS + 前端）
@@ -133,7 +133,7 @@ make contract         # 重新采集 bench --json 地面数据
 
 产物矩阵、发布流程与用户侧校验见 `deployment.md` §1（唯一权威，此处不重复）。
 
-未纳入且**本机不可用**的可选工具（已核实，不要假设它们在）：
+未纳入且**验证环境未安装**的可选工具（不要假设它们存在）：
 `golangci-lint`、`govulncheck`。后者建议上服务器/CI 后补做（直接依赖只有
 `modernc.org/sqlite` 与 `gopkg.in/yaml.v3` 两个，攻击面小）。
 
@@ -146,7 +146,8 @@ make contract         # 重新采集 bench --json 地面数据
 - [x] CLI 子命令可用且 `--json` / 退出码构成稳定契约（M3）
 - [x] Pi 可一句话触发一键/随机测试（M4，真实 pi 验证）
 - [x] DSH 适配（M4：真 DSH headless + 真 LLM 验证 19/19）
-- [ ] 前端静态上 CDN，源站不服务前端（M5）
+- [x] 前端由源站托管 + 缓存头分级 + ETag/304 + `/v1` 未被静态兜底吞掉（M5）
+- [ ] CDN 上线后的命中率与刷新行为（M6，需真实 CDN 环境）
 
 ## 10. 实测结果（M2–M4 + 发布工程，已跑通）
 
@@ -185,60 +186,28 @@ make contract         # 重新采集 bench --json 地面数据
   测试 patch 把 `tool-pwsh`/`tool-fs`/`tool-web` 等一切旁路 `disabled: true`
   ——**第一轮实测就靠这条抓到了“模型自己跑 CLI 取数据”的假通过**。
 
-### 被测试抓出的真实缺陷（按严重度）
+### 被测试与实测抓出的缺陷（只留结论与防线）
 
-1. **`compressMW` 未接入中间件链** —— gzip 从未生效。带宽方案的第一要件，
-   仅靠写文档发现不了，由 `TestContractGzipRoundTrip` 抓出。
-2. **同步伪代码自带丢数据 bug**（`docs/client.md` §4 原稿）—— `hash = d.since`
-   写在翻页循环内，第二页会把新 hash 回喂服务端 → 服务端判定“已最新”返回空集 →
-   只同步到第一页。不报错不崩溃，只是默默丢数据。回归测试
-   `TestEndToEndSyncKeepsSinceFixedAcrossPages`（107 条跨页）。
-3. **`--fresh` 语义错误** —— 原实现排除“全部本地缓存 id”，而 `bench sync` 会把
-   整个目录灌进缓存，等于永远 404。改为排除“最近抽过”的滚动窗口（上限 50）。
-   由真实 Pi 调用抓出。
-4. **探测命令写成 `bench --json`** —— bench 把第一个位置当子命令名，`--json` 被
-   当未知命令退 5，导致正常二进制被误判为“版本过旧”。应为 `bench version --json`。
-5. **`flag` 包静默丢弃位置参数之后的选项** —— `bench config init --home X` 里
-   `--home` 被悄悄忽略且不报错。已加 `splitArgs` 分拢。
-6. **`CreatePendingPrompt` 未做 trim** —— 裁剪只在 handler，任何新写入方都会绕过。
-   已下沉到入库边界。
-7. **`os.WriteFile` 的 perm 仅创建时生效** —— 含凭据的配置若已存在不会被收紧权限。
-   已补显式 `Chmod`。
-8. **`PruneSnapshots` 声明了 `cutoff` 却漏传 SQL 参数** —— 运行必崩，编译器抓出。
-9. **测试自身的假阳性** —— `TestSDKSignatureAcceptedByServerVerifier`
-   首版用被篡改的 body **重新签名**，那是个自洽的合法签名，服务端接受完全正确，
-   测试会以“防篡改已验证”的假象通过。改为“沿用旧签名 + 偷换 payload”后才是真实攻击场景。
-10. **LLM 探针词被拒绝语引用 → 断言顺序缺陷** —— `smoke-dsh.sh` 先用
-    `grep TOOL-OK` 判失败、再查错误标记。模型完全正确地拒绝了（“因此不能回答 TOOL-OK”），
-    却因引用了探针词而被判为“把错误当成成功”。**插件无错，测试错了**。
-    改为**先查错误标记、再查探针词**（仍保留诊断力：真发生了“错误被吞”，
-    模型手里就没有错误文本可引）。同类断言已同步补进 Pi 侧。
-11. **一次错误归因（本节自身的缺陷）** —— Windows 上 `t.TempDir` 清理失败
-    （`unlinkat …: The directory is not empty`）曾被归因于“`clientFor` 的 7 个
-    调用点从不 `Close()`”，并据此补了 7 行 `defer`。复查提交历史证明**该结论是错的**：
-    那 7 处原本就有 `defer c.Close()`，测试侧的缓存与客户端也都已关闭。
-    冗余的 7 行已删除。**真实原因至今未定位**，当前 5 轮 `-race` 不复现；
-    再出现时应先取证据（失败的测试名、清理时目录残留项），不要先猜原因再改代码。
-12. **`go version -m` 读不到 `-ldflags`** —— 原计划用 build info 验证跨平台产物的
-    版本注入，实测 go1.27 只记 `-buildmode`/`-compiler`/`-trimpath`。改用构建时间戳
-    做字节级证据，并对照实验证明该检查有诊断力。
-13. **`pipefail` + `grep -q` 的 SIGPIPE 陷阱** —— `tar -tzf | grep -q` 里 grep 提前关
-    管道会让 tar 收到 EPIPE，整条管线返回 141，**归档内容完全正确也会被判失败**。
-    同类判断改成“先取进变量再模式匹配”。
-14. **测试环境留了旁路 → 假通过** —— 只断言“输出里出现源站标记串”是不够的：
-    模型可以自己调 shell 类工具跑 `bench` 拿数据，标记照样出现，却不再证明插件
-    链路走通。DSH 侧第一轮实测就抓到了这条路。修正：测试环境必须消除旁路
-    （DSH：patch 里 `disabled: true`；Pi：`--tools` 白名单）。
-15. **水合不会把 HTML 里的旧值补成客户端状态**（真浏览器点按抓出）—— Astro 预渲染时
-    读不到 `localStorage`，产出的是“SSR 视角”的 `<input value="">` 与 `<details open>`；
-    Preact 水合刻意不修补 DOM，于是刷新后源站地址框显示空白、面板不自动收起，
-    而地址其实已生效（列表能自动加载）——**界面在骗人**。改成挂载后用 `useEffect`
-    一次性同步，`open` 在挂载前传 `undefined` 交给 HTML 自带值。
-    同一轮还修了“保存地址后列表不重取”：各视图只在挂载时读过一次配置，
-    现在地址变化即 `location.reload()`，只改 Key 则不重载。
-16. **表单字段缺 `name` / `autocomplete`** —— Chrome 在 console 报 4 处 issue 与建议
-    （影响自动填充与辅助技术）。补齐 `name`，两个凭据字段标 `autocomplete="off"`
-    ——API Key 不该被密码管理器接管。
+过程叙述不在此展开；要细节查对应提交。
+
+| # | 缺陷 | 现在的防线 / 规则 |
+|---|---|---|
+| 1 | `compressMW` 未接进中间件链，gzip 从未生效 | `TestContractGzipRoundTrip` |
+| 2 | 同步把新 hash 回喂下一页 → 静默丢数据 | 翻页期间 `since` 固定；跨页回归 107 条 |
+| 3 | `--fresh` 排除全部缓存 id（`sync` 会灌满）→ 永远 404 | 排除集改为“最近抽过”的滚动窗口 |
+| 4 | 探测写成 `bench --json` → 被当未知命令退 5，误判版本过旧 | 探测一律 `bench version --json` |
+| 5 | Go `flag` 静默丢弃位置参数之后的选项 | `splitArgs` 先分拢 |
+| 6 | 正文裁剪只在 handler，新写入方可绕过 | 裁剪下沉到入库边界 |
+| 7 | `os.WriteFile` 的 perm 仅创建时生效 | 写完显式 `Chmod`（Windows 限制见下） |
+| 8 | `PruneSnapshots` 声明 `cutoff` 却漏传 SQL 参数 | 编译器即抓出 |
+| 9 | 签名测试用被篡改 body 重新签名 → 自洽合法，假通过 | 必须“沿用旧签名 + 偷换 payload” |
+| 10 | LLM 拒绝时会原话引用探针词 → 断言把正确行为判成失败 | **先查错误标记、再查探针词** |
+| 11 | Windows `t.TempDir` 清理失败（`unlinkat … not empty`）**两次归因都错了**：先是“CLI 不关句柄”（那些 `Close()` 本来就在），后是“缓存 WAL 留侧文件”（干净关闭会删掉它们，对照实验直接否定了这个说法） | 原因仍未定位；改前改后合计 34 轮 `-race` 不复现。任何新解释必须先有能失败的对照实验 |
+| 12 | `go version -m` 读不到 `-ldflags`，无法据此验证版本注入 | 构建时间戳字节级证据 + 对照实验 |
+| 13 | `pipefail` + `grep -q`：grep 提前关管道 → 正确归档被判失败 | 先取进变量再模式匹配 |
+| 14 | 测试环境留旁路，模型自己跑 CLI 取数 → 假通过 | 测试环境禁用一切旁路工具 |
+| 15 | 水合不修补 DOM：预渲染值与客户端状态不一致 → 地址框空白、面板不收起 | 挂载后一次性同步；**改岛组件后必须真浏览器点一轮** |
+| 16 | 表单字段缺 `name` / `autocomplete` | 浏览器 console 纳入验收 |
 
 ### 已知限制（不阻塞）
 
@@ -252,14 +221,10 @@ make contract         # 重新采集 bench --json 地面数据
 - **两份 `bench-core.ts` 是副本关系**（pi 与 dsh 各一份，因装载机制不同无法共享）。
   漂移风险由 **sha256 哈希钉测试** 把守（两测试文件各钉一份，改动必须双向同步
   后一起更新钉值），不依赖仓库布局。这是当前防止两框架行为分叉的唯一机制。
-- 曾观察到一次 `-race` 下只数到 12/13 包，当时**猜**是 httptest 随机端口偶发争用；
-  后来换成“CLI 不关 SQLite 句柄”这个解释，**那个解释同样是猜的**（见缺陷 11）。
-  真实原因至今未定位。原始报错如下，留作下次取证的起点：
-  `--- FAIL: TestRandomFreshOnlyExcludesRecentlyDrawn` 本身通过，
-  挂在 `t.TempDir` 的清理上 —— `unlinkat …: The directory is not empty`。
-  **根因是 CLI 创建了带 SQLite 缓存的 client 却从不 `Close()`**：Windows 不允许
-  删除仍被句柄占用的文件，于是清理失败；失败包会在 `internal/cli` 与 `pkg/client`
-  之间飘，单独跑又总过 —— 典型的资源泄漏伪装成“随机不稳”。
-  当前 5 轮全量 `-race` 稳定 14/14，但**不能据此宣布已修**。
-  **结论：“复现不了就先记一笔偶然”会把真 bug 合理化为噪声**；反过来，
-  “拿到一个听起来合理的解释就写进文档”会把猜测固化成事实 —— 两者都要防。
+- Windows 上偶发的 `t.TempDir` 清理失败（`unlinkat …: The directory is not empty`，
+  表现为 `-race` 少一个包）**原因未定位**：抓到过一次复现（`TestErrorExitCodesAndJSONShape`，
+  与更早那次不是同一个测试，说明不绑定具体用例），此后 34 轮不复现。
+  两次归因都被证据否定，见缺陷 11。下次出现时要先采集：失败测试名、
+  残留目录里到底剩哪些文件（`ls -a` 那个路径）、是否伴随并发进程。
+  教训是双向的 —— “归因于环境”会把真 bug 洗成噪声，
+  “接受一个听起来合理的解释”会把猜测固化成文档。

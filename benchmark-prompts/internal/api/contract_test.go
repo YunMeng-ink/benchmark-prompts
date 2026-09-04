@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -462,6 +463,109 @@ func TestContractKeyRegisterErrors(t *testing.T) {
 	}
 	if !strings.HasPrefix(unknown, "forbidden|") {
 		t.Fatalf("邀请码无效应 403 forbidden，得到 %q", unknown)
+	}
+}
+
+// TestContractStaticHosting 覆盖「源站托管前端 + CDN 回源」这一形态。
+// 最关键的一条：注册了 `GET /` 兜底之后，写错的 API 路径仍必须得到 404 契约
+// 信封而不是 200 + HTML —— 否则客户端再也分不清两者。
+func TestContractStaticHosting(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "_astro"), 0o755); err != nil {
+		t.Fatalf("建目录失败: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "index.html"), "<!doctype html><title>BENCH-WEB-OK</title>")
+	writeFile(t, filepath.Join(root, "_astro", "App.abc123.js"), "console.log(1)")
+	writeFile(t, filepath.Join(root, "runtime-config.js"), "window.__BENCH_WEB__={apiBase:''}")
+
+	h := newHarnessWith(t, func(c *config.Config) { c.Server.StaticDir = root })
+
+	// 1. 入口与 hash 资产的缓存策略必须分级。
+	rec := h.do(http.MethodGet, "/", nil, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "BENCH-WEB-OK") {
+		t.Fatalf("首页应 200 且带内容，得到 %d / %s", rec.Code, rec.Body.String())
+	}
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "must-revalidate") {
+		t.Fatalf("入口文件必须每次校验，否则发版不生效，得到 %q", cc)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("首页 Content-Type 应为 HTML，得到 %q", ct)
+	}
+	rec = h.do(http.MethodGet, "/_astro/App.abc123.js", nil, nil)
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Fatalf("带内容 hash 的资产应 immutable 长缓存，得到 %q", cc)
+	}
+	rec = h.do(http.MethodGet, "/runtime-config.js", nil, nil)
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "max-age=300") {
+		t.Fatalf("部署期可改的配置应短缓存，得到 %q", cc)
+	}
+
+	// 2. ETag 与 304：CDN 未命中时靠它省掉回源字节。
+	rec = h.do(http.MethodGet, "/", nil, nil)
+	etag := rec.Header().Get("ETag")
+	if etag == "" {
+		t.Fatalf("入口文件应带 ETag 以支持回源校验")
+	}
+	rec = h.do(http.MethodGet, "/", nil, map[string]string{"If-None-Match": etag})
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("If-None-Match 命中应 304，得到 %d", rec.Code)
+	}
+
+	// 3. 关键：API 路径不得掉进静态兜底。
+	//    故意在 web 目录里放一个名为 v1 的文件，模拟误部署 —— 没有守卫时
+	//    GET /v1 会把它当静态资源发出去（200 + HTML），有守卫必须给 404 信封。
+	//    不这样构造的话，两边都是"文件不存在 → 404"，断言就没有诊断力。
+	writeFile(t, filepath.Join(root, "v1"), "BENCH-WEB-OK")
+	rec = h.do(http.MethodGet, "/v1", nil, nil)
+	if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "BENCH-WEB-OK") {
+		t.Fatalf("GET /v1 被静态兜底接住了：%d / %s", rec.Code, rec.Body.String())
+	}
+	if e := decodeEnv(t, rec.Body.Bytes()); e.Error == nil || e.Error.Code != "not_found" {
+		t.Fatalf("GET /v1 应给 not_found 信封，得到 %+v", e.Error)
+	}
+	rec = h.do(http.MethodGet, "/v1/definitely-not-an-endpoint", nil, nil)
+	if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "BENCH-WEB-OK") {
+		t.Fatalf("未知 /v1 路径竟返回了 HTML 200：%d / %s", rec.Code, rec.Body.String())
+	}
+	e := decodeEnv(t, rec.Body.Bytes())
+	if e.Error == nil || e.Error.Code != "not_found" {
+		t.Fatalf("未知 /v1 路径应给 not_found 信封，得到 %+v", e.Error)
+	}
+	rec = h.do(http.MethodGet, "/-/definitely-not-an-endpoint", nil, nil)
+	if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "BENCH-WEB-OK") {
+		t.Fatalf("未知 /- 路径竟返回了 HTML")
+	}
+	if rec := h.do(http.MethodGet, "/-/healthz", nil, nil); rec.Code != http.StatusOK {
+		t.Fatalf("healthz 应仍可用，得到 %d", rec.Code)
+	}
+
+	// 4. 缺文件就是 404，不回落 index.html：hash 路由不需要服务端重写，
+	//    回落只会把坏链接伪装成首页。
+	rec = h.do(http.MethodGet, "/_astro/Missing.js", nil, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("缺失资产应 404，得到 %d", rec.Code)
+	}
+
+	// 5. 穿越：root 之外的文件必须取不到。
+	writeFile(t, filepath.Join(filepath.Dir(root), "secret.txt"), "leak")
+	for _, p := range []string{"/secret.txt", "/%2e%2e/secret.txt", "/_astro/../../secret.txt"} {
+		rec = h.do(http.MethodGet, p, nil, nil)
+		if rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), "leak") {
+			t.Fatalf("路径穿越成功：%s 取到了 root 外的文件", p)
+		}
+	}
+
+	// 6. 未配置 static_dir 时源站不代管前端（纯 CDN/对象存储形态）。
+	plain := newHarness(t)
+	if rec := plain.do(http.MethodGet, "/", nil, nil); rec.Code == http.StatusOK {
+		t.Fatalf("未配置 static_dir 却返回了 200")
+	}
+}
+
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("写文件失败: %v", err)
 	}
 }
 

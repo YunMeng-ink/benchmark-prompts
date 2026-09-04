@@ -35,14 +35,14 @@ export default function UploadView() {
 		<section>
 			<h2>上传测试题</h2>
 			<p class="hint">
-				正文 {len} / {MAX_LEN} 字符（按码点计数，与源站校验一致）。提交后进审核队列，通过后才出现在公开列表。
+				正文 {len} / {MAX_LEN} 字符 · 提交后进审核队列
 			</p>
 			<label class="block">
 				提示词正文
 				<textarea name="upload_content" rows={10} value={content} onInput={(e) => setContent(e.currentTarget.value)} />
 			</label>
 			<label class="block">
-				标签（逗号分隔，最多 10 个）
+				标签
 				<input
 					name="upload_tags"
 					value={tagsInput}
@@ -54,14 +54,13 @@ export default function UploadView() {
 				<button type="button" disabled={!canSubmit} onClick={submit}>
 					{busy ? "提交中…" : "提交"}
 				</button>
-				<span class="hint">写入需要 API Key，在下方「连接设置」里填</span>
+				<span class="hint">需要 API Key</span>
 			</p>
 			{len > MAX_LEN && <p class="error">正文超出上限，请精简后再提交。</p>}
 			{err && <p class="error">{err}</p>}
 			{done && (
 				<p class="ok">
-					已收到，id <code>{done.id}</code>，状态 <code>{done.s}</code>
-					（等待审核）。同一浏览器重复提交不会新建第二条。
+					已收到 <code>{done.id}</code>，等待审核。
 				</p>
 			)}
 		</section>

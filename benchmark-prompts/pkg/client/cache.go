@@ -57,7 +57,13 @@ func OpenCache(path string) (*Cache, error) {
 
 	c := &Cache{db: db, path: path}
 	ctx := context.Background()
-	for _, p := range []string{"PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA busy_timeout=5000"} {
+	// journal_mode 用 DELETE：本地缓存是单连接、短命、单进程的 SQLite 文件，
+	// WAL 的并发收益在这里不存在，而 WAL 运行期会多出 .db-wal/.db-shm 两个侧文件。
+	// 服务端仍用 WAL —— 那里确有“服务进程 + 运维子命令”并发读写的场景。
+	//
+	// 注意：这不是 Windows 上那个 t.TempDir 偶发清理失败的“修复”。那个现象至今
+	// 未能稳定复现（改前改后合计 34 轮 -race 全绿），原因未定位，别把它当已解决。
+	for _, p := range []string{"PRAGMA journal_mode=DELETE", "PRAGMA synchronous=NORMAL", "PRAGMA busy_timeout=5000"} {
 		if _, err := db.ExecContext(ctx, p); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("缓存 PRAGMA 失败: %w", err)

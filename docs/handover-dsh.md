@@ -4,7 +4,7 @@
 > 的交接材料。**实现已完成**（5 工具 + 6 命令 + subprocess 桥，`make smoke-dsh` 19/19）。
 > 因此本文现在的价值是：
 >
-> - **DSH 框架研究底稿** —— 插件 API 的准确形状、本机源码位置与行号（将来
+> - **DSH 框架研究底稿** —— 插件 API 的准确形状、源码位置置与行号（将来
 >   扩展 DSH 能力、或适配别的 Cordis 应用时仍然用得上）；
 > - **`bench` CLI 契约的地面数据**（§9，由脚本实测采集，不靠转述）；
 > - **方法论与历史决策记录**（§11–§12）。
@@ -14,9 +14,9 @@
 > 写作时间：2026-09-03。代码基线：`benchmark-prompts/` M1–M4（Pi + DSH 均已完成）。
 >
 > **路径约定**：本文里 `benchmark-prompts/…` 与 `docs/…` 均相对于仓库根
-> （下面写作 `<仓库根>`）；`~` 指本机用户目录（Windows 上实测可用）。
+> （下面写作 `<仓库根>`）；`~` 指当前用户目录（Windows 上实测可用）。
 >
-> **本文所有 DSH 结论均为本机实测所得，非推测。** 未实现前标注为“未核实”的部分
+> **本文所有 DSH 结论均为实测所得，非推测。** 未实现前标注为“未核实”的部分
 > 已由实现阶段逐条落地（见 §12），保留原文供追溯。
 
 ---
@@ -39,42 +39,11 @@
 
 ---
 
-## 1. 任务与验收标准
+## 1. 本文范围
 
-### 要做什么
-
-在 `benchmark-prompts/plugins/dsh/` 下实现 DSH 侧薄适配，提供与 Pi 等价的能力：
-
-| 能力 | Pi 里的名字 | DSH 里要做成 |
-|---|---|---|
-| 随机取一条 | `bench_random` 工具 + `/bench-random` | tool + command |
-| 按 id 取一条 | `bench_get` + `/bench-get` | tool + command |
-| 打分 1–5 | `bench_score` + `/bench-score` | tool + command |
-| 浏览/同步/状态 | `bench_catalog` + `/bench-list` 等 | tool + command |
-| 上传 | `bench_upload` | tool |
-| 流程知识 | `plugins/pi/skill/…/SKILL.md` | 复制即可（§6） |
-
-### 验收标准（缺一不可）
-
-> **实现结果：五条全部达成**，逐条证据在 `make smoke-dsh`（19/19）
-> 与 `plugins/dsh/`；对照实验、旁路禁用、SKIP 语义均照 §11 执行。
-
-- [x] 在**真实 DSH** 里，模型能调用工具取到源站上一条**带唯一标记**的提示词
-      —— 不是模型自己编的文本（用 §11 的标记法验证）。
-- [x] 断网/未配置/分值越界/条目不存在四类失败，DSH 侧显示的是**可行动的**中文提示，
-      且**没有**被标成成功结果。
-- [x] `bench` 不存在时给出安装指引，且用户装好后**不重启 DSH** 也能恢复
-      （Pi 侧靠“探测失败不缓存”达成，见 `bench-core.ts` 的 `ensureBench`；DSH 侧同一手法，
-      且有单元断言）。
-- [x] 有一条能在本机自动跑的验证脚本（`scripts/smoke-dsh.sh` + `make smoke-dsh`）。
-- [x] 回写 `docs/plugins.md` §4（已改为“已实现，真机验证”，§7/§8 同步更新）。
-
-### 硬性约束
-
-**插件里不许出现任何业务逻辑**：不许直接发 HTTP、不许自己解析 ETag/增量同步、
-不许自己拼 URL。全部走 `bench` CLI。理由见 §9 末尾。
-
----
+本节只界定材料边界：**DSH 框架侧的事实**（装载机制、API 形状、子进程语义、CLI 地面数据）。
+插件实现本身以 `benchmark-prompts/plugins/dsh/` 的代码与测试为准；安装与使用见其 README；
+跨框架对齐表见 `plugins.md` §4；验证方法论见 `testing.md` §9。
 
 ## 2. DSH 是什么（实测身份认定）
 
@@ -85,7 +54,7 @@
 | 插件框架 | **`@deepseek-ai/cordis` 4.0.2**（+ `cosmokit` 1.8.3） | `cordis/package.json` |
 | 参数/配置校验 | **`@deepseek-ai/schemastery` 3.18.2**，工具内部也用 **zod ^4.4.3** | `dsh-tool-todo/package.json` |
 | LLM 层 | **内嵌 `@earendil-works/pi-ai` 0.84.2** | `node_modules/@earendil-works/pi-ai/package.json` |
-| 数据目录 | `~/.dsh/`（`profiles/`、`sessions/`、`storages/`、`settings.yaml`） | 本机 |
+| 数据目录 | `~/.dsh/`（`profiles/`、`sessions/`、`storages/`、`settings.yaml`） | 实测 |
 
 ### 一个容易误判的点
 
@@ -99,7 +68,7 @@ DSH 内嵌 `pi-ai`，**但 `pi-ai` 只是模型/Provider 抽象层**（TypeBox �
 ### 如何自行复核（重要）
 
 **DSH 的 npm 包直接附带 TypeScript 源码**，`package.json` 里有
-`"./src/*": "./src/*"` 导出。也就是说本机就有全部实现可读，
+`"./src/*": "./src/*"` 导出。也就是说安装树里就有全部实现可读，
 不需要外部文档、不需要猜：
 
 ```bash
@@ -260,7 +229,7 @@ ctx.tools.register(defineTool({
 `throw new Error('invalid todos: …')`，以及
 `if (!exec.agent) throw new Error('todo_write requires an owning agent session')`。
 
-> Pi 侧的实测教训：把错误包成“正常返回一个带 error 字段的对象”会被当成成功，
+> 规则：把错误包成“正常返回一个带 error 字段的对象”会被当成成功，
 > 模型于是信心满满地幻觉出一条提示词。**DSH 同理，别写这种代码。**
 
 ### 大结果：DSH 有框架级兜底，但别依赖
@@ -510,168 +479,23 @@ stderr= 错误[network] network: 网络请求失败 (…)
 
 ---
 
-## 10. 推荐实现方案
+## 10. 实现方案
 
-### 分层：复用 bench-core
+调研阶段这里写的分层设计与 `apply` 骨架已被真实实现取代，**以代码为准**：
 
-Pi 适配当初刻意把易错逻辑抽成零依赖纯模块 `plugins/pi/extension/bench-core.ts`，
-**不 import 任何框架代码**。它导出：
+- 入口与工具/命令注册：`benchmark-prompts/plugins/dsh/index.ts`
+- 纯逻辑（argv 构造、退出码映射、截断）：`plugins/dsh/bench-core.ts`
+  与 `plugins/pi/extension/bench-core.ts` 是副本关系，漂移由 sha256 哈希钉测试把守
+- 装载路线（patch / `plugin add` / junction）：`plugins/dsh/README.md`
+- 与 Pi 的方言差异速查：`plugins.md` §4
 
-```
-buildArgs(command, params)      参数 → argv
-decodeBench(res, bin, prefix)   退出码 + stdout → 数据 / 抛 BenchError
-ensureBench(bin)                探测可用版本（失败不缓存）
-truncate(text, maxLines, maxBytes)
-assertScoreValue / assertId     入参前置校验（不消耗网络往返）
-resolveBinary()                 BENCH_BIN > PATH
-formatStatus() / BenchError / ExitCode
-```
+本节保留标题是为了不破坏其它文档对“§10”的引用。
 
-`Exec` 类型是自定义的最小函数签名，因此**不绑定 Pi 的 `pi.exec`**。
+## 11. 验证方法论
 
-于是 DSH 适配最省事的做法：
-
-```
-plugins/dsh/
-├── index.ts        # 只做：apply(ctx, config) + defineTool + ctx.subprocess 适配 + commands
-├── bench-core.ts   # 从 plugins/pi/extension/bench-core.ts 复制（同一份代码）
-└── README.md
-```
-
-**不要**抽成共享包 —— 两边装载机制不同（pi 走 jiti 相对导入、DSH 走 npm 包解析），
-为一个文件引入 workspace 打包不值得。**但要**在 `plugins/dsh/README.md` 里写明
-“本文件复制自 pi，改动必须双向同步”，并让 TS 测试同时跑两份（`node --test` 两边路径
-都列上，或让 DSH 那份 test 直接 import pi 那份断言行为一致）。
-
-> 更好的办法（如果嫌复制脏）：让 `plugins/dsh/bench-core.ts` 只是一行
-> `export * from '../../pi/extension/bench-core.ts'`。装载上是否允许跨目录相对导入，
-> 属于 §12-A 那个未验证问题的一部分。
-
-### 建议的 `apply` 骨架
-
-> **实现注记**：骨架里 `resolveBinary(config.bin)` 与实际签名不符
-> （`resolveBinary(env)` 只认 `BENCH_BIN`/PATH；bin 的 config 覆盖在入口做）；
-> `makeSubprocessExec` 的实际实现叫 `makeExec`，见
-> `benchmark-prompts/plugins/dsh/index.ts`——以代码为准。
-
-```ts
-export const inject = ['tools', 'commands', 'subprocess']
-
-export function apply(ctx: Context, config: Config): void {
-  const { bin } = resolveBinary(config.bin)
-
-  // 一次封装：argv → { stdout, stderr, code }，并把 exec.signal 透传给 spawn
-  const exec = makeSubprocessExec(ctx.subprocess, config.graceMs)
-
-  const run = async (args: string[], signal?: AbortSignal) => {
-    await ensureBench(bin, exec)                       // 懒探测，失败不缓存
-    const res = await exec(bin, args, signal)
-    return decodeBench(res, bin, args)                 // 抛 BenchError = 工具失败
-  }
-
-  ctx.tools.register(defineTool({
-    name: 'bench_random',
-    description: '……',
-    parameters: { tag: { type: 'string', required: false, description: '…' },
-                  fresh: { type: 'boolean', required: false, description: '…' } },
-    output: { schema: promptSchema, render: (_, v) => [{ type: 'text', text: renderPromptBlock(v) }] },
-    timeoutMs: 60_000,
-    isConcurrencySafe: () => false,                    // random 会写"最近抽过"窗口
-    async execute(a, exec) { return await run(buildArgs('random', a), exec.signal) },
-  }))
-  // …get / score / catalog / upload
-}
-```
-
-`renderPromptBlock`（Pi 侧的正文模板）也照搬，保持两框架**给用户完全一致的排版**：
-
-```
-【Benchmark 提示词 <id>】标签: <tags>  v<version>
-----------------------------------
-<正文>
-----------------------------------
-把上面这段原样发给被测模型；回答完成后调用 bench_score(id="<id>", value=1-5) 记录评分。
-```
-
-（模板出处：`docs/plugins.md` §5。）
-
-> ⚠️ `renderPromptBlock` 在 **`plugins/pi/extension/index.ts:456`**，是个**未导出的
-> 私有函数**，不在 `bench-core.ts` 里 —— 所以得从入口文件抄代码，而不是 import。
-
-### `isConcurrencySafe` 怎么选
-
-- `bench_get` / `bench_meta` / `bench_list` → **true**（只读）
-- `bench_random` → **false**：它会推进客户端“最近抽过”滚动窗口，并发调用会互相吃掉排除集
-- `bench_score` / `bench_upload` → **false**（写请求，且写不重试，见 `docs/client.md` ADR-12）
-
-### 推荐 vs 实际（实现阶段对本节的修正）
-
-以下是本文§§3–§10 的推荐与最终实现的差异，**以代码为准**：
-
-| 本文原本写的 | 实测事实 | 影响 |
-|---|---|---|
-| 骨架里 `tag: { type: 'string', **required: false** }` | **可选属性必须省掉 `required` 键**；写 `required: false` 类型不过 | 直接抄骨架会编译失败，见 `plugins/dsh/index.ts` 真实写法 |
-| §7：“`DSH_*` 与 API key 被剥” | 清洗范围更宽：匹配 `/KEY\|PASSWORD\|SECRET\|TOKEN/i` 的名字**全部**被剥 + 所有 `DSH_*` | `BENCH_API_KEY`/`BENCH_SECRET` **不会**透传；`BENCH_HOME`/`BENCH_ENDPOINT` 不在名单但也不建议依赖 |
-| §10：“拷一份就行” | 装载副本目录里**看不到** `plugins/pi/` 兄弟目录 | 比对方案改为 **sha256 哈希钉**（不依赖布局）+ 布局可用时再逐字节比对 |
-| 未提装载细节 | symlink 会被 Node ESM realpath 解析回仓库原位→裸导入失败；**要用 junction** | 开发回路的关键，见 README 路线 C |
-| 未提 | `patchReload: live` **只热更 patch 层，不热更已缓存模块代码** | 改代码必须重启，别指望热更 |
-| §7 建议“把凭据显式塞进 `spec.env`” | 最终实现**刻意不塞 env**：显式 env 会覆盖净化，可能泄漏宿主凭证 | 配置一律走 `--home` / `--endpoint` 参数（更安全） |
-
-实现阶段还两侧同步修了一个类型缺陷（`as typeof envelope` 自指引出 `never`，
-由 `make typecheck-dsh` 的 tsc 逮到）——这恰好说明“pi 入口无类型检查”这个
-已知限制，在 DSH 侧是**可以被补上的**（DSH 包自带 `.d.ts`，而 Pi 发行版不带）。
-
-> 方法论上多出一层本文没预见的强化：测试 patch 把 `tool-pwsh`/`tool-fs`/`tool-web`
-> 等一切旁路工具 `disabled: true`，**第一轮实测真的抓到了“模型自己跑 CLI 取数据”
-> 的假通过**。Pi 侧等价物是 `smoke-pi.sh` 里的 `--tools` 白名单（已核：
-> 该白名单作用于内置+扩展工具，旁路已堵）。两边现在同构。
-
----
-
-## 11. 验证方法论（照抄 Pi 的做法，别自创）
-
-### 原则：先证明“检测手段有效”，再证明“被测对象无错”
-
-`scripts/smoke-pi.sh` 里做的是**对照实验**：
-
-1. 先加载一个**故意写坏**的扩展，断言 DSH/pi 会报 `Failed to load …`。
-2. 再加载本项目插件，断言**不出现**该报错。
-
-没有第 1 步，“没报错”就毫无证据价值 —— 它同样兼容“根本没加载”。
-**DSH 侧必须复刻这个结构。**
-
-### 原则：断言“数据来自源站”，而不是“看起来像结果”
-
-Pi 侧的真实调用做法：往源站上传一条含**唯一标记串**的提示词，然后让**真实模型**
-调用工具，在输出里 grep 那个标记。这样能排除“模型自己编了一段提示词”——
-这是这类适配最容易产生的假通过。
-
-### 可直接复用的脚本
-
-```bash
-bash benchmark-prompts/scripts/capture-contract.sh   # 重新生成本文 §9 的全部输出
-make -C benchmark-prompts smoke-cli                  # 真实 bench 二进制端到端（35 项）
-make -C benchmark-prompts smoke-pi                   # pi 侧适配验证（12 项，结构模板）
-make -C benchmark-prompts smoke-dsh                  # DSH 侧适配验证（19 项）
-```
-
-`capture-contract.sh` 会自建服务端、登记 Key、种两条提示词、过审，然后打印
-每个命令的**真实 stdout 与退出码**。改完 DSH 插件后，用同一份 seed 数据在 DSH 里
-跑一遍，就能对比“CLI 给的东西”和“插件报给用户的东西”是否一致。
-
-### 建议新增
-
-> **已交付。** `scripts/smoke-dsh.sh`（A 前置 → B 单元/tsc →
-> C 对照实验 → D 真实调用 → E 失败分支 → F skill 发现；测试 patch 会 `disabled` 掉
-> `tool-pwsh`/`tool-fs`/`tool-web` 等旁路，堵死“模型自己跑 CLI 取数据”的假通过——
-> 第一轮实测真的抓到了这条路）+ Makefile `smoke-dsh` / `typecheck-dsh` 目标 +
-> `node --test` 7+23 项（`plugins/dsh/*.test.ts`）。SKIP 语义照本文 §11 执行。
-
-**SKIP 必须显式区别于 PASS。** Pi 的 `smoke-pi.sh` 在缺 pi/凭据时以 0 退出并打印
-SKIP 字样；`make lint-ts`/`test-ts` 在缺 node/biome 时同样打印 SKIP 而非静默成功。
-照这个语义写，别让 CI 变成绿色谎言。
-
----
+端到端验证的原则（先证明检测手段有效、断言数据来自源站、SKIP 区别于 PASS）
+与本项目通用，统一记在 `testing.md` §9；DSH 侧的具体分段与实现见
+`benchmark-prompts/scripts/smoke-dsh.sh`。本文不再重复一份。
 
 ## 12. 开工前置问题的核实结果
 
@@ -703,7 +527,7 @@ headless 形态、TS 装载、文档缺口）。**全部已由实现阶段核实
 
 ---
 
-## 13. 参考路径速查（本机绝对路径）
+## 13. 参考路径速查（相对 DSH 安装根）
 
 **DSH 侧（读源码即读文档，全部带 `src/`）**
 
@@ -745,7 +569,7 @@ docs/api.md       冻结的 HTTP 契约（你不需要直接碰它）
 
 **Pi 官方文档**（对照用）：随 Pi 发行版一同安装在
 `<pi 安装目录>/docs/extensions.md`（用 `command -v pi` 定位后向上找）。
-DSH 侧的等价资料就在本机：`~/.dsh/profiles/node_modules/@deepseek-ai/<包>/src/`。
+DSH 侧的等价资料就在安装树：`~/.dsh/profiles/node_modules/@deepseek-ai/<包>/src/`。
 
 ---
 

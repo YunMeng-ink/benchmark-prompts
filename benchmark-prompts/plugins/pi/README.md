@@ -2,12 +2,6 @@
 
 给 [pi-coding-agent](https://github.com/badlogic/pi) 的 benchmark 提示词扩展。
 
-**本目录不含业务逻辑**：所有能力都在 `bench` CLI 里，这里只是薄胶水。
-同一套 `bench` 契约已被两个框架共同验证：本目录（Pi）与
-[`../dsh/`](../dsh/README.md)（DSH，Cordis 插件）。两者形状完全不同
-（TypeBox vs schemastery；返回 content vs 只返回受 `output.schema` 校验的 JSON），
-但共担同一份 `bench-core.ts` 纯逻辑 —— 这正是“能力下沉 CLI”决策（ADR-6）的预期收益。
-
 ```
 plugins/pi/
 ├── extension/
@@ -75,7 +69,7 @@ make smoke-pi      # 真实 pi 加载扩展并让 LLM 实际调用工具（12 �
 不构成任何证据。它还会真的让模型调用 `bench_random`，检查取回的是源站上那条
 带唯一标记的提示词，而不是模型自己编的文本。
 
-两处防假通过的设计（均自 DSH 侧实测经验同步过来）：
+两处防假通过的设计：
 
 - **`--tools` 白名单**堵死旁路：否则模型可以自己跑 `bench` 取数据，
   “取回源站标记”就不再证明工具链路走通了。

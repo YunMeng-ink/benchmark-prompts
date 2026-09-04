@@ -38,9 +38,6 @@ export default function App() {
 
 			<footer>
 				<Credentials />
-				<p class="hint">
-					前端不持有任何签名密钥；数据全部直连源站 <code>/v1</code>，构建产物可原样丢到 CDN。
-				</p>
 			</footer>
 		</>
 	);

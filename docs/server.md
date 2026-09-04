@@ -2,7 +2,7 @@
 
 > 实现对象：`cmd/server` + `internal/api` + 依赖模块。契约依据 `docs/api.md`。
 
-## 1. 依赖清单（已实现）
+## 1. 依赖清单
 
 ```
 module github.com/example/benchmark-prompts
@@ -206,7 +206,14 @@ DELETE → store.DisableAPIKey(id.KeyHash) → { ref, revoked:true }；之后该
 
 ## 8. 静态资源与 TLS 终结
 
-- 源站**不服务前端静态资源**（前端在 CDN）。
+- 源站可托管前端产物：`server.static_dir` 指向 `web/dist` 时注册 `GET /` 兜底，
+  CDN 在其前面缓存。留空则源站只出 API（前端整体放对象存储的形态）。
+- 缓存头分三级：`/_astro/*`（带内容 hash）`immutable` 一年；`index.html`
+  `max-age=0, must-revalidate` + 弱 ETag（发版立刻生效，未变时靠 304 省字节）；
+  其余（如部署期可改的 `runtime-config.js`）短缓存 300s。
+- **静态兜底不得吞掉 API**：`/v1`、`/-` 前缀在静态 handler 里先挡下并返回
+  `not_found` 信封。否则写错的接口路径会拿到 200 + HTML，客户端无法区分
+  “接口不存在”和“首页”。
 - 生产只开 443：Go 内建 `http.Server` + `TLSConfig`，证书挂 `/etc/bench/tls.{crt,key}`。
 - 可选前置 Caddy/Nginx 做 TLS 与更细粒度压缩，但为少进程本文档倾向 Go 直接 TLS。
 
