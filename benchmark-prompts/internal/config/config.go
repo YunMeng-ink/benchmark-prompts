@@ -4,7 +4,9 @@ package config
 import (
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -58,6 +60,12 @@ type Server struct {
 	// StaticDir 非空时，源站直接托管该目录下的前端产物，由 CDN 缓存分发。
 	// 留空 = 不提供前端（前端整体放在对象存储/纯 CDN 时用它）。
 	StaticDir string `yaml:"static_dir"`
+
+	// TrustedProxies 是可信任的**直连对端**网段（CIDR 或单 IP）。只有当 TCP 对端
+	// 落在这里面时，才采信 X-Forwarded-For / X-Real-IP；否则一律用直连地址。
+	// 留空 = 默认仅回环（127.0.0.0/8、::1），正好匹配“nginx 与源站同机”的形态。
+	// 填了就用填的**整体替换**默认值 —— 别再指望回环仍被信任。
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 // Store SQLite 配置。
@@ -176,6 +184,16 @@ func (c *Config) Validate() error {
 	}
 	if c.Moderation.MaxPromptLen <= 0 {
 		return fmt.Errorf("moderation.max_prompt_len 必须大于 0")
+	}
+	// 可信代理网段配错 = 限流被人用一条请求头绕开，所以宁可启动失败。
+	for i, c0 := range c.Server.TrustedProxies {
+		c0 = strings.TrimSpace(c0)
+		if c0 == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(c0); err != nil && net.ParseIP(c0) == nil {
+			return fmt.Errorf("server.trusted_proxies[%d]=%q 不是合法 CIDR 或 IP", i, c0)
+		}
 	}
 	return nil
 }

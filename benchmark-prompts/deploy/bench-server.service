@@ -1,0 +1,55 @@
+# bench-server 源站服务单元
+#
+# 安装：
+#   sudo cp deploy/bench-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now bench-server
+#
+# 前提（路径按 /data 数据盘约定，见 deploy/README.md 的一次性初始化）：
+#   /data/bench/bin/bench-server      可执行
+#   /data/bench/config.yaml           0640 root:bench
+#   /etc/bench/server.env             0600 root:root，含 BENCH_SECRET_KEY
+#
+# TLS 由 nginx 终结，源站只监听 127.0.0.1:8080，因此不需要 CAP_NET_BIND_SERVICE。
+
+[Unit]
+Description=benchmark 提示词源站
+Documentation=https://github.com/YunMeng-ink/benchmark-prompts
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/data/bench/config.yaml
+
+[Service]
+Type=simple
+User=bench
+Group=bench
+EnvironmentFile=/etc/bench/server.env
+ExecStart=/data/bench/bin/bench-server -config /data/bench/config.yaml
+WorkingDirectory=/data/bench
+Restart=always
+RestartSec=3
+
+# 日志走 journald（源站自身输出 JSON 行）；持久化由 journald 负责，无需 logrotate。
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bench-server
+
+# 数据盘之外的写操作一律拒绝，白名单只有 /data/bench。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data/bench
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryMax=768M
+
+# 停机时给在途请求 10s 收尾（进程本身处理 SIGTERM 优雅关闭）。
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

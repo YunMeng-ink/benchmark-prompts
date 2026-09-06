@@ -2,11 +2,20 @@
 # 启动： bench-server -config config.example.yaml -dev
 
 server:
-  addr: ":8080"          # 生产改为 ":443" 并配置证书
+  # 常规形态是 nginx 终结 TLS、源站只听回环：生产填 "127.0.0.1:8080"。
+  # 这里的 ":8080" 面向本机开发；源站直接暴露到公网时才需要配下面的证书。
+  addr: ":8080"
   read_timeout: 10s
   write_timeout: 20s
-  tls_cert: ""           # 留空 + -dev => 明文 HTTP
+  tls_cert: ""           # 留空 = 明文 HTTP（与是否 -dev 无关）
   tls_key: ""
+  # 源站托管前端产物，CDN 挡在前面缓存；留空 = 只出 API。
+  # 部署时改成 /data/bench/web（见 docs/deployment.md §2）。
+  static_dir: "./web/dist"
+  # 只有**直连对端**落在这里面时才采信 X-Forwarded-For / X-Real-IP。
+  # 留空 = 默认仅回环；填了就是整体替换，别漏掉 127.0.0.0/8。
+  # 前面还有 CDN 时必须把厂商公布的回源网段一起加进来，否则全站并成一个限流桶。
+  trusted_proxies: ["127.0.0.0/8"]
 
 store:
   path: ./bench.db

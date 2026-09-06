@@ -85,6 +85,32 @@ type Limiter struct { window time.Duration; max map[string]int }
 func (l *Limiter) Allow(endpoint, key string) (bool, time.Duration) { ... }
 ```
 
+### 4.1 匿名键里的 IP 怎么取（`internal/api/clientip.go`）
+
+匿名限流与访问日志的 `ip` 字段都来自同一个解析器，规则如下：
+
+1. 取 TCP 直连对端地址 `r.RemoteAddr`。**只有它落在 `server.trusted_proxies`
+   网段内时**才继续看转发头；否则直接返回直连地址，
+   `X-Forwarded-For` / `X-Real-IP` 一律忽略。
+2. 采信时把 `X-Forwarded-For` 按逗号拆开，**从右往左取第一个非可信跳**；
+   整条链都可信时取最左（避免健康检查全记成回环）。无 `XFF` 时退到 `X-Real-IP`，
+   再退到直连地址。每一项都过 `net.ParseIP`，垃圾值丢弃而不是当成合法地址。
+
+为什么不直接信头：客户端可以自己塞 `X-Forwarded-For: 1.2.3.<随机>`，
+每次请求换一个新限流身份 —— 逐 IP 限流当场失效，审计日志同时被洗白。
+右向左遍历的理由相同：右侧那一跳是我们自己的代理追加的，左侧仍可能伪造。
+
+默认值是**仅回环**（`127.0.0.0/8`、`::1`），匹配“nginx 与源站同机”；
+一旦显式配置就成了**整体替换**，回环不再自动可信。
+反代/CDN 下的两种典型错配（全站并成一个桶、CDN 出口 IP 被当客户端）见
+[deployment.md](./deployment.md) §2.4。
+
+防线：`TestIPResolver` 逐条钉住采信与忽略的边界；
+`TestForgedForwardedHeaderCannotEvadeLimit` 是攻防用例 —— 同一个不可信对端轮换
+伪造 `XFF` 必须共用一个桶（关掉修复即红）；
+`TestRealClientsBehindTrustedProxyAreSeparate` 钉住反方向，可信代理后面的
+不同真实客户端不能被合并。
+
 ## 5. 压缩与 ETag
 
 **ETag（`meta`/`get`）**：

@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -168,7 +167,7 @@ func (s *Server) metricsMW(next http.Handler) http.Handler {
 			"status", mw.status,
 			"dur_ms", time.Since(start).Milliseconds(),
 			"bytes", mw.bytes,
-			"ip", clientIP(r),
+			"ip", s.ips.ip(r),
 			"who", identityOf(r),
 		)
 	})
@@ -259,7 +258,7 @@ func (s *Server) adminMW(next http.HandlerFunc) http.HandlerFunc {
 // 否则已鉴权请求会被按匿名配额误限。
 func (s *Server) limitMW(endpoint string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tier, subject := ratelimit.TierAnonymous, clientIP(r)
+		tier, subject := ratelimit.TierAnonymous, s.ips.ip(r)
 		if who := identityOf(r); who != "" {
 			tier, subject = ratelimit.TierAuthed, who
 		}
@@ -270,21 +269,6 @@ func (s *Server) limitMW(endpoint string, next http.HandlerFunc) http.HandlerFun
 		}
 		next(w, r)
 	}
-}
-
-// clientIP 优先取 X-Forwarded-For（源站在 CDN 之后）。
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i > 0 {
-			return strings.TrimSpace(xff[:i])
-		}
-		return strings.TrimSpace(xff)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }
 
 func newRequestID() string {

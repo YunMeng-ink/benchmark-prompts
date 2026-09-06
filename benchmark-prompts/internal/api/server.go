@@ -26,6 +26,7 @@ type Server struct {
 	metrics *metrics.Registry
 	mod     *moderation.Checker
 	degrade map[string]bool
+	ips     *ipResolver
 	log     *slog.Logger
 }
 
@@ -64,6 +65,14 @@ func New(d Deps) *Server {
 	if s.metrics == nil {
 		s.metrics = &metrics.Registry{}
 	}
+	// 客户端地址解析器。配错不在这里炸（Validate 已在加载阶段拦过一道），
+	// 退回到“仅回环可信”这个远端伪造不了的保守值。
+	ips, ipErr := newIPResolver(d.Config.Server.TrustedProxies)
+	if ipErr != nil {
+		s.log.Error("trusted_proxies 配置无效，退回仅回环可信", "err", ipErr)
+		ips, _ = newIPResolver(nil)
+	}
+	s.ips = ips
 	return s
 }
 

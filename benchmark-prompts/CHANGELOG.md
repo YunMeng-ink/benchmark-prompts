@@ -28,15 +28,39 @@
   否则列默认值会把既有运维 Key 静默降级（有专门的升级测试钉住）。
 
 - **前端站点 `web/`（M5）**：Astro 纯静态输出 + Preact 岛，四个 hash 路由
-  （列表 / 随机 / 详情 / 上传）+ 打分区 + 连接设置。产物整目录上 CDN、零回源；
-  构建时报告真实体积（当前首屏 19.7 KB gzip）。用法见 `web/README.md`。
+  （列表 / 随机 / 详情 / 上传）+ 打分区 + 连接设置。产物由源站托管、CDN 缓存分发
+  （见下条架构变更）；构建时报告真实体积（当前首屏 20.6 KB gzip）。用法见 `web/README.md`。
 - **只读端点 `GET /v1/prompts/{id}/score`**：返回 `{id, avg, count}`，无人打分是
   `0/0` 而非 404。动机：旧契约下 `avg`/`count` 只出现在 `POST /v1/scores` 的响应里，
   前端「查看打分」在没有提交过的条数上什么也读不到。契约按「只增不改不删」
   追加为 `docs/api.md` §3.8。
 - **门禁**：`make web-install` / `web-build` / `web-check` / `web-preview` / `web-size` /
-  `smoke-web`（45 项，真源站 + 真产物 + 直接 import 浏览器那份 `api.ts`）。
+  `smoke-web`（真源站 + 真产物 + 直接 import 浏览器那份 `api.ts`；项数见 docs/testing.md §10）。
   `make check` 现在包含前端静态与类型检查。
+
+- **`deploy/` 部署资产**：`bench-server.service`（systemd 加固 + `EnvironmentFile`）、
+  `bench-server.env.example`、`nginx-bench.conf`（TLS 终结 + 必带 `X-Forwarded-For`）、
+  `bench-backup.sh` 与 `bench-backup.{service,timer}`（每日 `VACUUM INTO` 快照、
+  原子改名、14 天保留、0600）。`docs/deployment.md` §2 重写为该形态的步骤与判据，
+  并删除了早期内联的单元草稿（它与交付件在路径、单元名上都不一致，且缺
+  `EnvironmentFile`，照抄会启动失败）。
+- **`scripts/verify-linux.sh`**：用即将部署的 linux/amd64 ELF 在真实 Linux 上跑
+  10 项端到端（API、三级缓存头、`/v1` 不被静态兜底吞掉、可信/不可信对端的 IP 采信）。
+- `config.example.yaml` 补齐 `server.static_dir`（此前只有代码里有、样例缺）
+  与 `server.trusted_proxies`，并把“生产改为 :443 并配证书”的过时建议改为
+  “nginx 终结 TLS、源站只听 127.0.0.1:8080”。
+
+### 安全
+
+- **修复：`X-Forwarded-For` 被无条件采信**（`internal/api/clientip.go` 重写）。
+  匿名限流的主体与访问日志的 `ip` 都取自客户端地址，而旧实现直接取请求头的**最左跳**，
+  任何直连客户端自带 `X-Forwarded-For: 1.2.3.<随机>` 就能每次换一个新的限流身份 ——
+  逐 IP 限流当场失效，审计日志同时被洗白。现在**只有直连对端落在
+  `server.trusted_proxies` 内时才采信转发头**，采信时从右往左取第一个非可信跳。
+  默认为仅回环（匹配“nginx 与源站同机”）；显式配置即整体替换。
+  新增 `TestIPResolver`（12 条边界）与攻防用例
+  `TestForgedForwardedHeaderCannotEvadeLimit`（关掉修复必红）及其反向钉
+  `TestRealClientsBehindTrustedProxyAreSeparate`。
 
 ### 变更
 

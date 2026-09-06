@@ -32,7 +32,7 @@
 聚合覆盖率 **78.3%** ｜ `scripts/smoke.sh` **47/47** ｜ `scripts/smoke-cli.sh` **49/49** ｜
 `node --test` **40/40**（pi bench-core 33 + dsh bench-core 副本 7）+ **23/23**（dsh plugin.test）｜
 `make typecheck-dsh` ✅ ｜ `scripts/smoke-pi.sh` **12/12**、`scripts/smoke-dsh.sh` **19/19**（真实框架 + 真实 LLM 调用）、
-`scripts/smoke-web.sh` **58/58**。
+`scripts/smoke-web.sh` **64/64**。
 
 ## 快速开始
 
@@ -90,6 +90,7 @@ plugins/
   dsh/                 DSH 适配（Cordis 插件：index.ts + 同一份 bench-core.ts + 两层测试）
 pkg/client/            公开 SDK：类型、错误码、签名、本地缓存、同步
 web/                 前端站点：Astro 纯静态 + Preact 岛，产物由源站托管、CDN 缓存
+deploy/                部署文件本体：systemd 单元、nginx 站点、备份脚本与 timer
 ```
 
 ## 运维子命令

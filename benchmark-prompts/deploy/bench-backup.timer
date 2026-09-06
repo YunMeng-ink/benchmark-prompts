@@ -1,0 +1,20 @@
+# 每天 03:15 跑一次备份。Persistent=true 让关机期间错过的任务在开机后补跑。
+#
+# 安装（脚本本体装到 /data/bench/bin/，见 deploy/README.md）：
+#   sudo cp deploy/bench-backup.service deploy/bench-backup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now bench-backup.timer
+#   systemctl list-timers bench-backup.timer     # 看下次触发时间
+#   sudo systemd-run --unit=bench-backup-test --same-dir /data/bench/bin/bench-backup.sh   # 手工验一次
+
+[Unit]
+Description=每日备份 benchmark 源站数据库
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=600
+Persistent=true
+Unit=bench-backup.service
+
+[Install]
+WantedBy=timers.target

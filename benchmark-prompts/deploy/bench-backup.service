@@ -1,0 +1,23 @@
+# 一次性备份任务（由 bench-backup.timer 触发）
+#
+# 与主服务同用户，才能读 0640 的配置与 0600 的库文件。
+# 不需要 BENCH_SECRET_KEY：-backup 在加载主密钥之前就返回了。
+
+[Unit]
+Description=备份 benchmark 源站数据库（VACUUM INTO 一致性快照）
+Wants=network-local.target
+After=bench-server.service
+
+[Service]
+Type=oneshot
+User=bench
+Group=bench
+ExecStart=/data/bench/bin/bench-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/data/bench

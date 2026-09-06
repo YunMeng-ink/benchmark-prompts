@@ -20,7 +20,7 @@ LDFLAGS := -s -w $(XFLAGS)
 GOEXE := $(shell $(GO) env GOEXE 2>/dev/null)
 
 .PHONY: help tidy fmt vet static build build-cli test test-ts lint-ts race cover run dev \
-        build-all release release-verify version check smoke smoke-cli smoke-pi smoke-dsh typecheck-dsh contract backup clean \
+        build-all build-server-linux release release-verify version check smoke smoke-cli smoke-pi smoke-dsh typecheck-dsh contract verify-linux backup clean \
         web-install web-build web-preview web-check web-size smoke-web
 
 help: ## 显示可用目标
@@ -83,6 +83,9 @@ dev: ## 本地明文 HTTP 启动（无需证书与主密钥）
 run: build ## 用示例配置启动
 	$(BIN_DIR)/bench-server -config config.example.yaml
 
+verify-linux: build-server-linux ## 用即将部署的 linux/amd64 ELF 跑真实端到端（Windows 上自动转 WSL）
+	bash scripts/verify-linux.sh
+
 backup: ## 一次性一致性备份
 	$(GO) run ./cmd/server -config config.example.yaml -backup ./backup-manual.db
 
@@ -131,6 +134,10 @@ contract: ## 采集 bench 的真实 --json 输出与退出码（框架适配的�
 	bash scripts/capture-contract.sh
 
 check: fmt vet static build build-cli race lint-ts test-ts web-check ## 完整质量门禁（Go + TS + 前端）
+
+build-server-linux: ## 只交叉编译源站的 linux/amd64 静态二进制
+	@mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/bench-server-linux-amd64 ./cmd/server
 
 build-all: ## 交叉编译全发布矩阵（bench 5 平台 / server 3 平台，纯 Go 无需 CGO）
 	@mkdir -p $(BIN_DIR)

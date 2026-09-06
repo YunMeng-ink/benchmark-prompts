@@ -41,47 +41,133 @@ tar -xzf bench-v0.1.0-linux-amd64.tar.gz
 ./bench-v0.1.0-linux-amd64/bench version      # 期望真实版本号，而不是 dev
 ```
 
-## 2. 源站部署（systemd）
+## 2. 源站部署（Ubuntu 22.04 + nginx + certbot）
+
+### 2.1 目标形态
+
+只有 22/80/443 对外开放，因此 **TLS 在 nginx 终结，源站监听 `127.0.0.1:8080` 明文**，
+数据放数据盘 `/data`。源站二进制在没配证书时走 `ListenAndServe`，不需要 `-dev`
+（`-dev` 只是把日志换成文本，见 `server.md` §8）。
 
 ```
-/etc/bench/config.yaml        # 配置（含 TLS 路径）
-/var/lib/bench/bench.db       # SQLite
-/etc/bench/tls.crt|key        # 证书
-/usr/local/bin/bench-server   # 二进制
+/data/bench/bin/bench-server          二进制（linux/amd64，静态，无 glibc 依赖）
+/data/bench/bin/bench-backup.sh       备份脚本
+/data/bench/config.yaml               配置，0640 root:bench
+/data/bench/data/bench.db             SQLite（含 -wal/-shm）
+/data/bench/web/                      前端产物（源站托管，CDN 缓存）
+/data/bench/backups/                  每日一致性快照，0600
+/etc/bench/server.env                 BENCH_SECRET_KEY，0600 root:root
+/etc/systemd/system/bench-server.service
+/etc/nginx/sites-available/bench
 ```
 
-```ini
-# /etc/systemd/system/bench.service
-[Unit]
-Description=Benchmark Prompts API
-After=network.target
+单元、env 模板、nginx 站点、备份 service/timer 的**权威内容在仓库 `deploy/` 目录**，
+本文只写步骤与判据 —— 此前本节内联过一份单元草稿，它与实际交付的文件在路径和
+单元名上都不一致（且缺 `EnvironmentFile`，照抄会启动失败），故改为指向。
 
-[Service]
-User=bench
-ExecStart=/usr/local/bin/bench-server -config /etc/bench/config.yaml
-Restart=on-failure
-RestartSec=3
-LimitNOFILE=65536
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths=/var/lib/bench
+| 文件 | 装到 |
+|---|---|
+| `deploy/bench-server.service` | `/etc/systemd/system/bench-server.service` |
+| `deploy/bench-server.env.example` | `/etc/bench/server.env`（填值后 0600） |
+| `deploy/nginx-bench.conf` | `/etc/nginx/sites-available/bench` |
+| `deploy/bench-backup.service` `.timer` | `/etc/systemd/system/` |
+| `deploy/bench-backup.sh` | `/data/bench/bin/bench-backup.sh`（0750） |
 
-[Install]
-WantedBy=multi-user.target
-```
+### 2.2 一次性初始化
 
 ```bash
-systemctl enable --now bench
-journalctl -u bench -f      # 看日志（结构化 slog）
+# 0) 交叉编译产物（在开发机上做，产物静态、与目标 glibc 无关）
+cd benchmark-prompts && make build-all        # dist/bench-server-linux-amd64
+
+# 1) 用户与数据盘目录
+sudo useradd --system --home /data/bench --shell /usr/sbin/nologin bench
+sudo install -d -m 750 -o bench -g bench /data/bench/{bin,data,web,backups}
+sudo install -d -m 755 -o root -g root /etc/bench
+
+# 2) 二进制、脚本、前端产物
+sudo install -m 755 -o root -g root dist/bench-server-linux-amd64 /data/bench/bin/bench-server
+sudo install -m 750 -o root -g bench deploy/bench-backup.sh /data/bench/bin/bench-backup.sh
+rsync -a --delete web/dist/ /data/bench/web/      # 需 sudo，目录属 root
+
+# 3) 配置与密钥
+sudo -e /data/bench/config.yaml                   # 以 config.example.yaml 为底
+sudo install -m 600 -o root -g root /dev/null /etc/bench/server.env
+printf 'BENCH_SECRET_KEY=%s
+' "$(openssl rand -hex 32)" | sudo tee /etc/bench/server.env
+sudo chown root:root /data/bench/config.yaml && sudo chmod 640 /data/bench/config.yaml
+
+# 4) systemd
+sudo cp deploy/bench-server.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now bench-server
+systemctl status bench-server --no-pager | head -5
 ```
+
+`config.yaml` 至少要有这四条（其余用默认值）：
+
+```yaml
+server:
+  addr: "127.0.0.1:8080"
+  static_dir: /data/bench/web
+  trusted_proxies: ["127.0.0.0/8"]   # 见 §2.4，前面还有 CDN 时必须加段
+store:
+  path: /data/bench/data/bench.db
+```
+
+### 2.3 nginx 与证书
+
+```bash
+sudo cp deploy/nginx-bench.conf /etc/nginx/sites-available/bench
+sudoedit /etc/nginx/sites-available/bench        # 把 bench.example.com 换成真实域名
+sudo ln -s /etc/nginx/sites-available/bench /etc/nginx/sites-enabled/bench
+sudo rm -f /etc/nginx/sites-enabled/default      # 否则默认站点会抢下 80 的匹配
+sudo nginx -t && sudo systemctl reload nginx
+
+sudo apt-get install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d bench.example.com --redirect -m you@example.com --agree-tos -n
+sudo certbot renew --dry-run                     # 续期由它的 systemd timer 负责
+```
+
+`--nginx` 会把证书路径写进同一个站点文件，`--redirect` 加 80→443 跳转，
+所以 §2.1 的模板在 certbot 之后以 certbot 的结果为准。
+
+### 2.4 客户端 IP（反代下最容易配错的一处）
+
+限流主体与审计日志的 `ip` 字段都取自客户端地址。规则是
+**只有直连对端落在 `server.trusted_proxies` 内时才采信 `X-Forwarded-For`**，
+采信时从右往左取第一个非可信跳。默认值仅回环，正好匹配“nginx 与源站同机”。
+
+由此有两条会真实踩到的后果：
+
+- nginx 没带 `X-Forwarded-For` → 全站访客都记成 `127.0.0.1`，共用同一个匿名桶，
+  匿名配额瞬间打满（表现为人人 429）。
+- 前面还有一层 CDN → CDN 出口 IP 也是“非可信跳”，会被当成客户端地址，
+  于是同一 CDN 节点后的所有用户共享一个桶。要把 **CDN 厂商公布的回源网段**
+  一并加进 `trusted_proxies`，链才会继续左移到真实客户端。
+
+```yaml
+trusted_proxies: ["127.0.0.0/8", "203.0.113.0/24"]   # 后者换成 CDN 回源段
+```
+
+填了这个列表就是**整体替换**默认值：回环不再自动可信，别漏写 `127.0.0.0/8`。
 
 ## 3. 备份
 
+首选交付好的 systemd timer（时间、保留天数、原子落盘都已处理）：
+
 ```bash
-# /etc/cron.d/bench-backup（每日 03:00；用服务端自带 backup 子命令，纯 Go 驱动、不依赖 sqlite3 CLI）
-0 3 * * * bench /usr/local/bin/bench-server -backup /backup/bench-$(date +\%F).db
-# 清理 7 天前
-0 4 * * * bench find /backup -name 'bench-*.db' -mtime +7 -delete
+sudo cp deploy/bench-backup.service deploy/bench-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now bench-backup.timer
+systemctl list-timers bench-backup.timer                      # 下次触发时间
+sudo systemd-run --unit=backup-now --same-dir /data/bench/bin/bench-backup.sh   # 立刻验一次
+ls -l /data/bench/backups
+```
+
+`deploy/bench-backup.sh` 的三点设计：写同目录临时文件再 `mv`（同盘 rename 原子，
+目录里出现的快照一定完整）、保留 14 天（`BENCH_BACKUP_KEEP_DAYS` 可覆盖）、
+落盘后 `chmod 600`。用 cron 也可以，语义相同：
+
+```bash
+15 3 * * * bench /data/bench/bin/bench-backup.sh
 ```
 
 > `bench-server -backup <path>` 为服务端维护子命令：内部用同一纯 Go SQLite 驱动执行 `VACUUM INTO`，避免额外安装 sqlite3 CLI。目标路径已存在时**会报错而不是静默覆盖**（已被单测固定）。
@@ -120,7 +206,8 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 ## 5. 安全加固
 
 1. **最小权限**：服务以专用 `bench` 用户运行，`NoNewPrivileges`、`ProtectSystem=strict`。
-2. **只开 443**：防火墙仅放行 443；`/ -/metrics` 仅内网/管理 Key。
+2. **入站只有 22/80/443**：80 仅用于 ACME 与跳转，业务流量走 443；
+   源站监听 `127.0.0.1`，外部无法绕过 nginx 直连；`/-/metrics` 需要 `admin` 作用域的 Key。
 3. **密钥管理**：API key 存 `sha256`；HMAC `secret` 加密存储；生产用环境变量注入。
    凭据发放走邀请码，运维者**不需要**再逐条 `-put-key`：
 
@@ -136,7 +223,8 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
    自助注册的 Key 一律是 `writer`：能打分/上传，**读不到 `/-/metrics`**。
    需要管理能力的 Key 只能由运维者 `-put-key` 签发（scope=admin）。
    邀请码与 Key 的明文都只在签发那一刻出现一次，丢失只能重发。
-4. **TLS**：强制 HTTPS，HSTS 头。
+4. **TLS**：nginx 终结，certbot 申请并自动续期；站点文件带 HSTS 头。
+   源站不持有证书，也就没有“证书过期导致源站起不来”这类故障。
 5. **限流**：见 `server.md` §4 + 分级配额（`api.md` §6）。
 6. **输入消毒**：正文、标签、ID 全量校验，防 SQL 注入（用参数化查询）、防 XSS（前端转义）。
 7. **依赖审计**：`govulncheck` 定期扫。
@@ -200,13 +288,34 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 
 ## 8. 上线检查清单
 
-- [ ] 部署前先 `make release && make release-verify`，**产物未经验证不上传**
-- [ ] 部署后跑 `bench-server -version`，确认版本号与构建时间与本次发布一致
-      （而不是靠“刚传的文件应该是新的”这一印象）
-- [ ] 前端静态资源已上 CDN 且源站不服务 web/*
-- [ ] gzip 生效（curl -H 'Accept-Encoding: gzip' -I 验证 Content-Encoding）
-- [ ] meta/get 返回 ETag，且 If-None-Match → 304
-- [ ] 写入端点鉴权 + 限流生效
-- [ ] 备份 cron 已配
-- [ ] 带宽告警已接
-- [ ] TLS/HSTS 生效
+上传前（开发机）：
+
+- [ ] `make release && make release-verify` 通过 —— **产物未经验证不上传**
+- [ ] `make smoke-web` 通过（含源站托管与缓存头三级）
+- [ ] 有 Linux 环境时跑 `bash scripts/verify-linux.sh`，它用**即将上传的那个 ELF**
+      在真实 Linux 上验 API + 静态托管 + IP 采信
+
+上传后（源站）。每条都是能直接贴的命令，判据写在看不到就该停手的项上：
+
+- [ ] `bench-server -version` 的版本号与构建时间与本次发布一致
+      （不靠“刚传的文件应该是新的”这一印象）
+- [ ] `systemctl is-active bench-server` = `active`，且
+      `journalctl -u bench-server -b --no-pager | grep 服务启动` 里 `addr=127.0.0.1:8080`
+- [ ] 源站托管前端生效：`curl -sI 127.0.0.1:8080/ | grep -E 'HTTP|Cache-Control'`
+      返回 200 + `must-revalidate`
+- [ ] 静态兜底没吞 API：`curl -s 127.0.0.1:8080/v1/does-not-exist` 返回
+      `not_found` **信封**，不是 HTML
+- [ ] `curl -sI https://域名/` 与 `curl -sI https://域名/_astro/任一片段.js`
+      分别带 `must-revalidate` 与 `immutable`
+- [ ] gzip：`curl -sI -H 'Accept-Encoding: gzip' https://域名/v1/prompts | grep -i content-encoding`
+- [ ] ETag/304：取 `meta` 的 ETag 后 `curl -sI -H 'If-None-Match: <etag>'` 得 304
+- [ ] **真实客户端 IP**：`curl -s https://域名/v1/prompts >/dev/null` 之后
+      `journalctl -u bench-server -n 5 --no-pager | grep -o 'ip=[^ ]*'`
+      不能是 `127.0.0.1`（是则 nginx 没带 `X-Forwarded-For`，见 §2.4）
+- [ ] 写入端点鉴权 + 限流生效；`/-/metrics` 用 `writer` Key 应 403
+- [ ] `bench-backup.timer` 在 `list-timers` 里，且手工跑一次能出 0600 快照
+- [ ] `certbot renew --dry-run` 通过
+- [ ] 带宽看门狗告警已接（阈值权威在 §6）
+
+CDN 在前面时另外确认：回源网段已加进 `trusted_proxies`（§2.4）、
+入口 HTML 不被 CDN 长缓存、断源时 CDN 能继续供静态骨架。

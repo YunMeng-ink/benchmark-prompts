@@ -40,6 +40,7 @@
 | 适配层规格与两框架对齐表 | [plugins.md](./plugins.md) | — |
 | 前端**规格**（页面、约束、体积基线） | [frontend.md](./frontend.md) | `../benchmark-prompts/web/README.md` 只讲怎么用、注意什么 |
 | 前端**部署步骤 / 缓存头 / CORS 白名单** | [deployment.md](./deployment.md) §7 | `frontend.md` §9 与 `web/README.md` 均只指向它 |
+| **部署文件本体**（systemd 单元、nginx 站点、备份脚本/timer） | `../benchmark-prompts/deploy/` | 部署**步骤与判据**在 [deployment.md](./deployment.md) §2/§3/§8，不在那里重复内容 |
 | 凭据**契约**（注册端点、作用域语义） | [api.md](./api.md) §3.9–§3.10 | — |
 | 凭据**发放操作**（签发邀请码、列/吊销 Key） | [deployment.md](./deployment.md) §5 + [server.md](./server.md) §11 | `web/README.md` 只讲使用者视角 |
 | **测试项数 / 覆盖率 / 门禁状态** | [testing.md](./testing.md) §10 与 `../benchmark-prompts/README.md` | 其他地方引用时写目标名（`make check`）而非抄数字 |

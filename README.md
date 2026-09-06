@@ -46,7 +46,7 @@ grep bench-v0.1.0-linux-amd64 sha256sums.txt | sha256sum -c -
 
 ```
 docs/                  开发文档（先读 docs/README.md，内含“谁是事实来源”层级）
-benchmark-prompts/     代码：cmd/ internal/ pkg/client/ plugins/ web/ scripts/
+benchmark-prompts/     代码：cmd/ internal/ pkg/client/ plugins/ web/ deploy/ scripts/
 ```
 
 想读文档的话，顺序是

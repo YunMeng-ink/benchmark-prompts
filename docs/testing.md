@@ -127,7 +127,8 @@ make release           # 全平台交叉编译 + 打包 + sha256sums + RELEASE-I
 make release-verify    # 验证发布产物
 make smoke-pi         # 12 项，真实 pi + 真实 LLM（无凭据则 SKIP）
 make smoke-dsh        # 19 项，真 DSH headless + 真 LLM（无安装树则 SKIP）
-make smoke-web        # 58 项，前端真源站 + 真产物 + 浏览器那份 api.ts
+make smoke-web        # 64 项，前端真源站 + 真产物 + 浏览器那份 api.ts
+make verify-linux   # 可选：有 Linux/WSL 时，用即将部署的 ELF 跑真实端到端（不在 CI 门禁内）
 make contract         # 重新采集 bench --json 地面数据
 ```
 
