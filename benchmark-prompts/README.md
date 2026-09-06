@@ -29,7 +29,7 @@
 
 验证结果：`go build` ✅ ｜ `go vet` ✅ ｜ `staticcheck` 零发现 ｜ `gofmt` ✅ ｜
 `go test -race` **14/14 包通过** ｜
-聚合覆盖率 **78.3%** ｜ `scripts/smoke.sh` **47/47** ｜ `scripts/smoke-cli.sh` **49/49** ｜
+聚合覆盖率 **74.7%**（含 cmd/*，口径见 docs/testing.md §9） ｜ `scripts/smoke.sh` **47/47** ｜ `scripts/smoke-cli.sh` **49/49** ｜
 `node --test` **40/40**（pi bench-core 33 + dsh bench-core 副本 7）+ **23/23**（dsh plugin.test）｜
 `make typecheck-dsh` ✅ ｜ `scripts/smoke-pi.sh` **12/12**、`scripts/smoke-dsh.sh` **19/19**（真实框架 + 真实 LLM 调用）、
 `scripts/smoke-web.sh` **64/64**。

@@ -159,8 +159,8 @@ make contract         # 重新采集 bench --json 地面数据
 | 深度静态检查 | `staticcheck ./...`（2026.2.1） | ✅ **零发现**（M4 后才纳入 `make check`；M2–M4 期间漏跑） |
 | Go 格式 | `gofmt -l .` | ✅ 无输出 |
 | Go 单测+契约 | `go test -race -count=1 ./...` | ✅ **14/14 包通过**，无 DATA RACE |
-| 聚合覆盖率 | `go test -coverpkg=./...` | **78.3%**（cache/model/ratelimit 100%，auth 91.5%，catalog 87%，internal/cli 84.8%） |
-| TS lint/格式 | `biome check plugins/pi/extension/ plugins/dsh/` | ✅ **7 个文件** 0 error 0 warning（120 列 + tab，对齐 Pi 官方示例风格） |
+| 聚合覆盖率 | `go test -count=1 -coverpkg=./... ./... \| go tool cover -func` | **74.7%**（分母含 `cmd/*`，那里 0% —— main 只做装配、由冒烟脚本间接验证；剔除 `cmd/*` 则是 81.3%。引用这个数字必须连口径一起引用） |
+| TS lint/格式 | `pnpm exec biome check plugins/pi/extension/ plugins/dsh/ web/src/` | ✅ **17 个文件**零发现 |
 | TS 单测 | `make test-ts`（node --test） | ✅ **63 项**：Pi 侧 33（含 3 项真实 bench 集成、2 项 skill 结构校验）+ dsh bench-core 7（含哈希钉）+ **dsh 插件层 23**（假 ctx + 真 `defineTool`） |
 | DSH 类型检查 | `make typecheck-dsh` | ✅ `tsc noEmit` 对着 DSH 真实 `.d.ts`（DSH 包附 `src/`，可类型检查 —— pi 入口做不到） |
 | 服务端端到端 | `bash scripts/smoke.sh` | ✅ **47/47** |
