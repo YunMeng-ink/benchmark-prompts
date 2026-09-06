@@ -105,6 +105,11 @@ func (l *Limiter) Allow(endpoint, key string) (bool, time.Duration) { ... }
 反代/CDN 下的两种典型错配（全站并成一个桶、CDN 出口 IP 被当客户端）见
 [deployment.md](./deployment.md) §2.4。
 
+**规模与代价**：清单可以很大。CDN 回源网段按 234 条配置时，实测每请求两次查找
+共 2.4 µs（`BenchmarkIPResolverTrustedScan`），默认仅回环两项是 0.47 µs
+（`BenchmarkIPResolverDefaultTwoEntries`）。相对一次请求的 SQLite 读 + gzip + HTTP
+是噪声，因此**有意不做 v4 快速路径** —— 要优化先看这两个基准，别凭感觉加复杂度。
+
 防线：`TestIPResolver` 逐条钉住采信与忽略的边界；
 `TestForgedForwardedHeaderCannotEvadeLimit` 是攻防用例 —— 同一个不可信对端轮换
 伪造 `XFF` 必须共用一个桶（关掉修复即红）；

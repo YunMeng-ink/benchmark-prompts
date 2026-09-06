@@ -1,9 +1,13 @@
 package api
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/example/benchmark-prompts/internal/config"
@@ -137,6 +141,123 @@ func TestRealClientsBehindTrustedProxyAreSeparate(t *testing.T) {
 		handler.ServeHTTP(w, r)
 		if w.Code == http.StatusTooManyRequests {
 			t.Fatalf("第 %d 次就限流了：可信代理后面的不同客户端被并成了同一个桶", i+1)
+		}
+	}
+}
+
+// BenchmarkIPResolverTrustedScan 量出“把 CDN 网段整体塞进 trusted_proxies”的代价。
+// 每请求要查 2 次（直连对端 + 链上每一跳），所以这里跑 2 次查找。
+func BenchmarkIPResolverTrustedScan(b *testing.B) {
+	cidrs := make([]string, 0, 232)
+	for i := 0; i < 144; i++ {
+		cidrs = append(cidrs, netipCIDRv4(i))
+	}
+	for i := 0; i < 88; i++ {
+		cidrs = append(cidrs, netipCIDRv6(i))
+	}
+	r, err := newIPResolver(cidrs)
+	if err != nil {
+		b.Fatalf("构建失败: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v1/prompts/random", nil)
+	req.RemoteAddr = "127.0.0.1:50000"
+	req.Header.Set("X-Forwarded-For", "2001:db8:1::5") // 末跳非可信，触发整表扫描
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = r.ip(req)
+		_ = r.ip(req)
+	}
+}
+
+// 基线：默认仅回环两项。
+func BenchmarkIPResolverDefaultTwoEntries(b *testing.B) {
+	r, err := newIPResolver(nil)
+	if err != nil {
+		b.Fatalf("构建失败: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v1/prompts/random", nil)
+	req.RemoteAddr = "127.0.0.1:50000"
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = r.ip(req)
+		_ = r.ip(req)
+	}
+}
+
+func netipCIDRv4(i int) string {
+	return fmt.Sprintf("10.%d.%d.0/24", i%256, (i*7)%256)
+}
+
+func netipCIDRv6(i int) string {
+	return fmt.Sprintf("2001:db8:%x::/64", i)
+}
+
+// TestTrustedProxiesCDNFragment 钉住交付的 CDN 网段片段：
+// 文件必须能被解析，且链上行为符合“继续左移到真实客户端”的目的。
+func TestTrustedProxiesCDNFragment(t *testing.T) {
+	const path = "../../deploy/trusted-proxies.cdn.yaml"
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("读取 %s 失败（该文件是交付件，缺失即失败而不是跳过）: %v", path, err)
+	}
+
+	var cidrs []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, `- "`) {
+			continue
+		}
+		rest := line[3:]
+		q := strings.IndexByte(rest, '"') // 行尾可能还有注释，必须到闭合引号为止
+		if q < 0 {
+			t.Fatalf("片段里有未闭合引号的条目: %q", line)
+		}
+		if v := rest[:q]; v != "" {
+			cidrs = append(cidrs, v)
+		}
+	}
+	if len(cidrs) < 100 {
+		t.Fatalf("片段只解析出 %d 条，远少于预期的 234 条（解析逻辑或文件被截断？）", len(cidrs))
+	}
+	r, err := newIPResolver(cidrs)
+	if err != nil {
+		t.Fatalf("片段里有非法网段: %v", err)
+	}
+
+	// 回环两项必须在：少了它，同机 nginx 那一跳就不被信任，整表等于白配。
+	if !r.isTrusted(net.ParseIP("127.0.0.1")) || !r.isTrusted(net.ParseIP("::1")) {
+		t.Fatal("片段丢了回环项 —— 同机 nginx 会不被信任")
+	}
+
+	req := func(peer, xff string) *http.Request {
+		q := httptest.NewRequest(http.MethodGet, "/v1/prompts/random", nil)
+		q.RemoteAddr = peer
+		q.Header.Set("X-Forwarded-For", xff)
+		return q
+	}
+
+	// 178.236.38.0/23 来自清单里两个满 /24（178.236.38.0/24 与 178.236.39.0/24）。
+	chain := req("127.0.0.1:50000", "203.0.113.200, 178.236.38.77")
+	if got := r.ip(chain); got != "203.0.113.200" {
+		t.Fatalf("CDN 节点在链上时应继续左移取真实客户端，实际取到 %q", got)
+	}
+
+	// 未列出的中间跳不是可信网段，必须就地停住 —— 这证明没有过度信任。
+	unknown := req("127.0.0.1:50000", "203.0.113.200, 203.0.113.5")
+	if got := r.ip(unknown); got != "203.0.113.5" {
+		t.Fatalf("未列出的中间跳被当成可信了？实际取到 %q", got)
+	}
+
+	// 精确覆盖语义的抽查：清单里出现过的地址一定在网段内。
+	for _, s := range []string{"178.236.39.199", "103.115.48.192", "2406:da14:1443:3500:50a1:cd01:7ebb:4377"} {
+		ip := net.ParseIP(s)
+		if ip == nil {
+			t.Fatalf("测试数据里的地址 %q 本身非法", s)
+		}
+		if !r.isTrusted(ip) {
+			t.Fatalf("清单里的节点 %q 不在任何交付网段内（聚合漏了？）", s)
 		}
 	}
 }

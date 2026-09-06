@@ -51,7 +51,7 @@ build-cli: ## 编译 bench CLI（DSH/Pi 插件调用的入物）
 test: ## 运行测试
 	$(GO) test ./...
 
-test-ts: build-cli ## 运行扩展的 TS 单测（pi 侧 + dsh 侧纯逻辑；有 DSH 安装树再跑插件层）
+test-ts: build-cli ## 运行 TS 单测（pi/dsh 扩展纯逻辑 + 部署工具脚本；有 DSH 安装树再跑插件层）
 	@if command -v node >/dev/null 2>&1; then \
 		BENCH_BIN=$(BIN_DIR)/bench$(GOEXE) node --test plugins/pi/extension/bench-core.test.ts plugins/dsh/bench-core.test.ts; \
 		if [ -d "$$HOME/.dsh/profiles/node_modules/@deepseek-ai/dsh-tools" ]; then \
@@ -59,6 +59,7 @@ test-ts: build-cli ## 运行扩展的 TS 单测（pi 侧 + dsh 侧纯逻辑；�
 		else \
 			echo "SKIP plugin.test.ts：无 DSH 安装树（不是通过）"; \
 		fi; \
+		node --test scripts/cdn-summarize.test.mjs; \
 	else \
 		echo "SKIP test-ts：未找到 node（不是假通过，请装有 node 的机器上补跑）"; \
 	fi

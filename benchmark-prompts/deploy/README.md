@@ -15,6 +15,7 @@ deployment.md 早期内联的那份单元草稿就与实际交付件在路径和
 | `nginx-bench.conf` | `/etc/nginx/sites-available/bench` | 80 跳转 + 443 反代。带 `X-Forwarded-For`，**没带会让全站访客共用一个限流桶** |
 | `bench-backup.sh` | `/data/bench/bin/`（0750） | `VACUUM INTO` 一致性快照，原子改名 + 14 天保留 + 0600 |
 | `bench-backup.service` `.timer` | `/etc/systemd/system/` | 每日 03:15 触发上面的脚本，`Persistent=true` 补跑错过的 |
+| `trusted-proxies.cdn.yaml` | 内容并入 `/data/bench/config.yaml` | CDN 回源网段（234 条，精确覆盖）。缺了它，同一 CDN 节点后的访客会共用一个限流桶 |
 
 ## 三条最容易配错的
 

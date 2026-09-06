@@ -115,6 +115,44 @@ else
 	ok "对端不可信时忽略伪造的转发头，按直连地址记"
 fi
 
+# ── 阶段 3：带真实 CDN 回源网段（deploy/trusted-proxies.cdn.yaml）──────
+CDN_FRAG="${BENCH_VERIFY_CDN:-deploy/trusted-proxies.cdn.yaml}"
+if [ ! -f "$CDN_FRAG" ]; then
+	printf '  \033[33mskip\033[0m 找不到 %s，跳过 CDN 链阶段（不是通过）\n' "$CDN_FRAG"
+else
+	# 用片段里的第一条非回环 IPv4 网段的**网络地址本身**充当 CDN 节点（它必然落在段内）
+	CDN_NET=$(sed -n 's|^  - "\([0-9][0-9.]*\(/[0-9]*\)\)".*|\1|p' "$CDN_FRAG" | grep -v '^127\.' | head -1)
+	CDN_NODE=${CDN_NET%%/*}
+	if [ -z "$CDN_NODE" ]; then
+		no "片段里没有非回环 IPv4 网段，无法构造 CDN 链"
+	else
+		kill $PID 2>/dev/null
+		wait $PID 2>/dev/null
+		# 把片段整段写进配置（YAML 流式序列）
+		LIST=$(sed -n 's|^  - "\([^"]*\)".*|"\1"|p' "$CDN_FRAG" | paste -sd, -)
+		sed -i "s|^  trusted_proxies:.*|  trusted_proxies: [${LIST}]|" "$ROOT/config.yaml"
+		: >"$ROOT/server.log"
+		"$ABS_BIN" -config "$ROOT/config.yaml" -dev >"$ROOT/server.log" 2>&1 &
+		PID=$!
+		for _ in $(seq 1 40); do
+			if curl -fsS -o /dev/null "$B/-/healthz"; then break; fi
+			sleep 0.25
+		done
+		# 链 = 真实客户端, CDN 节点；直连对端是回环 nginx
+		curl -sS -o /dev/null -H "X-Forwarded-For: 203.0.113.200, ${CDN_NODE}" "$B/v1/prompts?limit=1"
+		sleep 0.3
+		if ! grep -qE 'path=/v1/prompts status=[0-9]' "$ROOT/server.log"; then
+			no "第三条服务没起来 —— 用真实 CDN 网段配 trust 后无法启动（不是通过）"
+		elif grep -qE "ip[\"=:, ]+${CDN_NODE//./\\.}" "$ROOT/server.log"; then
+			no "把 CDN 节点 ${CDN_NODE} 当成了客户端：网段没生效或链没继续左移"
+		elif grep -qE 'ip["=:, ]+203\.0\.113\.200' "$ROOT/server.log"; then
+			ok "CDN 在链上时左移到真实客户端 IP（$(grep -c '^  - "' "$CDN_FRAG") 条网段可解析）"
+		else
+			no "既没记 CDN 节点也没记真实客户端，无法判定"
+		fi
+	fi
+fi
+
 echo
 printf '\033[1mLinux 端到端结果\033[0m  通过 %d，失败 %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

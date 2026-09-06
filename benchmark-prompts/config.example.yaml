@@ -14,7 +14,8 @@ server:
   static_dir: "./web/dist"
   # 只有**直连对端**落在这里面时才采信 X-Forwarded-For / X-Real-IP。
   # 留空 = 默认仅回环；填了就是整体替换，别漏掉 127.0.0.0/8。
-  # 前面还有 CDN 时必须把厂商公布的回源网段一起加进来，否则全站并成一个限流桶。
+  # 前面还有 CDN 时必须把厂商公布的回源网段一起加进来，否则全站并成一个限流桶；
+  # 本仓库交付的归约结果在 deploy/trusted-proxies.cdn.yaml（234 条，精确覆盖）。
   trusted_proxies: ["127.0.0.0/8"]
 
 store:

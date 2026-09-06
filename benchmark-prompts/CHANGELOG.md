@@ -44,6 +44,17 @@
   原子改名、14 天保留、0600）。`docs/deployment.md` §2 重写为该形态的步骤与判据，
   并删除了早期内联的单元草稿（它与交付件在路径、单元名上都不一致，且缺
   `EnvironmentFile`，照抄会启动失败）。
+- **CDN 回源网段适配**：`scripts/cdn-summarize.mjs` 把节点清单（818 个 IPv4/IPv6
+  单地址）归约为 CIDR 网段，交付 `deploy/trusted-proxies.cdn.yaml`（234 条，
+  **精确覆盖**语义 —— 覆盖地址数与输入去重数完全相等，不多信任任何未列出地址）。
+  `--pad` 可切换为按 /24 与 /64 整段宽化以容忍节点轮换，代价由脚本如实报出
+  （IPv4 信任面 691 → 28160，约 40 倍）。12 项 `scripts/cdn-summarize.test.mjs`
+  把守，其中 IPv4 结果与 Python `ipaddress.collapse_addresses` 做过独立对账。
+  `scripts/verify-linux.sh` 增加第三阶段：用真实片段配 234 条网段起服务，验证
+  链上有 CDN 节点时继续左移到真实客户端 —— 对照实验（只留回环）确认它会报
+  “把 CDN 节点 178.236.38.0 当成了客户端”。
+  同时记录规模实测：234 条时每请求两次查找 2.4 µs（默认 2 条 0.47 µs），
+  因此**有意不做 v4 快速路径**，基准测试留在仓库里。
 - **`scripts/verify-linux.sh`**：用即将部署的 linux/amd64 ELF 在真实 Linux 上跑
   10 项端到端（API、三级缓存头、`/v1` 不被静态兜底吞掉、可信/不可信对端的 IP 采信）。
 - `config.example.yaml` 补齐 `server.static_dir`（此前只有代码里有、样例缺）

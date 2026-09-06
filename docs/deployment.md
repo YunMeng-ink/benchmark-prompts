@@ -144,11 +144,41 @@ sudo certbot renew --dry-run                     # 续期由它的 systemd timer
   于是同一 CDN 节点后的所有用户共享一个桶。要把 **CDN 厂商公布的回源网段**
   一并加进 `trusted_proxies`，链才会继续左移到真实客户端。
 
-```yaml
-trusted_proxies: ["127.0.0.0/8", "203.0.113.0/24"]   # 后者换成 CDN 回源段
+### 2.5 CDN 回源网段的接入
+
+本项目交付 `deploy/trusted-proxies.cdn.yaml`：从节点清单归约而来的 **234 条网段**
+（含回环两项），语义是**精确覆盖** —— 合计覆盖的地址数与当初喂进去的
+818 个去重地址完全相等，**不多信任任何一个未列出地址**。
+
+接入就是把它的条目并进配置（`deploy/README.md` 已给过表，这里只给命令）：
+
+```bash
+# 看片段内容（234 条，第一行必须是回环）
+sed -n 's|^  - "\([^"]*\)".*|\1|p' deploy/trusted-proxies.cdn.yaml | head
+# 把片段贴进 /data/bench/config.yaml 的 server.trusted_proxies 后，重启并验收
+sudo systemctl restart bench-server
+curl -s https://域名/v1/prompts >/dev/null
+journalctl -u bench-server -n 3 --no-pager | grep -o 'ip=[^ ]*'
 ```
 
+最后一条的判据：**既不能是 `127.0.0.1`（nginx 没带头），也不能是 CDN 节点地址
+（网段没配或 CDN 没追加跳）—— 必须是公网真实客户端地址**。
+用 `curl -v https://域名/` 看一眼自己从哪个地址访问，再对日志即可。
+
+清单变了（CDN 扩容/换节点）就重新生成，**不要把旧列表当永久事实**：
+
+```bash
+node scripts/cdn-summarize.mjs <新清单> --yaml > deploy/trusted-proxies.cdn.yaml
+# 生成后补回文件头的说明块，并跑 make check（有测试钉住该文件可解析且行为正确）
+```
+
+脚本默认精确覆盖；`--pad` 会按 /24 与 /64 整段宽化，换来对节点轮换的容忍，
+代价是**信任面从 691 个 IPv4 地址扩到 28160 个（约 40 倍）**，脚本会把差值直接报出来。
+两种模式的条数与地址数都有测试把守（`scripts/cdn-summarize.test.mjs`，12 项），
+其中一条拿 Python `ipaddress.collapse_addresses` 做过独立对账。
+
 填了这个列表就是**整体替换**默认值：回环不再自动可信，别漏写 `127.0.0.0/8`。
+
 
 ## 3. 备份
 
@@ -311,7 +341,8 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 - [ ] ETag/304：取 `meta` 的 ETag 后 `curl -sI -H 'If-None-Match: <etag>'` 得 304
 - [ ] **真实客户端 IP**：`curl -s https://域名/v1/prompts >/dev/null` 之后
       `journalctl -u bench-server -n 5 --no-pager | grep -o 'ip=[^ ]*'`
-      不能是 `127.0.0.1`（是则 nginx 没带 `X-Forwarded-For`，见 §2.4）
+      既不能是 `127.0.0.1`（nginx 没带 `X-Forwarded-For`，§2.4），
+      也不能是 CDN 节点地址（回源网段没配，§2.5）—— 必须是公网真实客户端地址
 - [ ] 写入端点鉴权 + 限流生效；`/-/metrics` 用 `writer` Key 应 403
 - [ ] `bench-backup.timer` 在 `list-timers` 里，且手工跑一次能出 0600 快照
 - [ ] `certbot renew --dry-run` 通过

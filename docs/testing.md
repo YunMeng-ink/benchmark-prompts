@@ -161,7 +161,7 @@ make contract         # 重新采集 bench --json 地面数据
 | Go 单测+契约 | `go test -race -count=1 ./...` | ✅ **14/14 包通过**，无 DATA RACE |
 | 聚合覆盖率 | `go test -count=1 -coverpkg=./... ./... \| go tool cover -func` | **74.7%**（分母含 `cmd/*`，那里 0% —— main 只做装配、由冒烟脚本间接验证；剔除 `cmd/*` 则是 81.3%。引用这个数字必须连口径一起引用） |
 | TS lint/格式 | `pnpm exec biome check plugins/pi/extension/ plugins/dsh/ web/src/` | ✅ **17 个文件**零发现 |
-| TS 单测 | `make test-ts`（node --test） | ✅ **63 项**：Pi 侧 33（含 3 项真实 bench 集成、2 项 skill 结构校验）+ dsh bench-core 7（含哈希钉）+ **dsh 插件层 23**（假 ctx + 真 `defineTool`） |
+| TS 单测 | `make test-ts`（node --test） | ✅ **75 项** = Pi 侧 33（含 3 项真实 bench 集成、2 项 skill 结构校验）+ dsh bench-core 7（含哈希钉）+ **dsh 插件层 23**（假 ctx + 真 `defineTool`）+ 部署工具 `cdn-summarize` 12 |
 | DSH 类型检查 | `make typecheck-dsh` | ✅ `tsc noEmit` 对着 DSH 真实 `.d.ts`（DSH 包附 `src/`，可类型检查 —— pi 入口做不到） |
 | 服务端端到端 | `bash scripts/smoke.sh` | ✅ **47/47** |
 | CLI 二进制端到端 | `bash scripts/smoke-cli.sh` | ✅ **49/49** |
