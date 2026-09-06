@@ -279,13 +279,19 @@ bench-server -config c.yaml -reject  p_xxxxxxxx             # 审核打回
 前端产物由**源站**提供，CDN 挡在前面缓存。命中不回源，未命中才消耗源站出口，
 所以 CDN 命中率是这套形态的关键指标。
 
+**前置条件：回源协议必须是 HTTPS。** nginx 在 80 上只做 ACME 与 301 跳转（§2.3），
+CDN 若配成 HTTP 回源（部分控制台里的 “flexible”），要么每次回源多一跳 301，
+要么在某些 CDN 上直接成环。上线前在 CDN 控制台把回源端口/协议确认为 443/HTTPS
+（能开“严格校验证书”就开），并用 `curl -sI http://域名/` 观察回源侧行为。
+
+步骤：
+
 1. 构建：`make web-build`（顺带打印体积报告）。
-2. 同步到源站：把 `web/dist/` 整目录放到服务器上的静态目录（如
-   `/var/lib/bench/web`），并在 `config.yaml` 里指向它：
+2. 同步到源站：把 `web/dist/` 整目录放进 §2.1 约定的静态目录，并让配置指向它：
 
    ```yaml
    server:
-     static_dir: /var/lib/bench/web
+     static_dir: /data/bench/web
    ```
 
    留空即回到"源站只出 API"的形态（前端整体放对象存储/纯 CDN 时用）。

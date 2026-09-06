@@ -70,7 +70,7 @@ server:
   tls_key: /etc/bench/tls.key
 
 store:
-  path: /var/lib/bench/bench.db
+  path: /data/bench/data/bench.db
   migrate: true
 
 auth:
@@ -82,7 +82,7 @@ ratelimit:
   authed:    { meta: 60, list: 300, random: 300, get: 300, delta: 30, scores: 30, upload: 10 }
 
 server:
-  static_dir: /var/lib/bench/web   # 非空则源站托管前端产物；留空=前端完全放对象存储
+  static_dir: /data/bench/web   # 非空则源站托管前端产物；留空=前端完全放对象存储
 
 bandwidth:
   watch_enabled: true

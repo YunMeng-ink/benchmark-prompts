@@ -2,7 +2,7 @@
 
 ## 1. 存储选型
 
-- **数据库**：SQLite（单文件 `/var/lib/bench/bench.db`），驱动 `modernc.org/sqlite`（纯 Go）。
+- **数据库**：SQLite（单文件 `/data/bench/data/bench.db`），驱动 `modernc.org/sqlite`（纯 Go）。
 - **迁移**：SQL 文件内嵌于 `internal/store/migrations/NNNN_*.sql`（`go:embed`，因此不依赖工作目录），按文件名顺序执行，`schema_migrations` 表记录版本；启动时若 `store.migrate=true` 自动迁移，幂等可重跑。
 - **写并发**：SQLite 写串行，业务写极低频，足够；连接池只读，写走单连接 + WAL 模式。
 
